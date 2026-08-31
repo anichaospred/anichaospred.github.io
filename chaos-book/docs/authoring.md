@@ -136,11 +136,30 @@ While iterating on a chapter, the fastest real check is:
 
 ```bash
 marimo export html --sandbox notebooks/chNN_slug.py -o <scratch>/check.html
-grep -c marimo-error <scratch>/check.html      # must be 0
+echo "exit=$?"                                  # must be 0
+grep -c marimo-error <scratch>/check.html       # must be 0
 ```
 
 because that form *executes every cell*. `html-wasm` only bundles and will happily
 produce a page whose cells all raise in the reader's browser.
+
+**Check the exit code, not only the grep.** This matters and cost real time: a
+notebook whose cells all raised `MarimoExceptionRaisedError` still produced
+`grep -c marimo-error` = **0**, while the command printed
+`Error: Export was successful, but some cells failed to execute.` and exited
+non-zero. The grep alone will pass a broken chapter. Read stderr, or test the exit
+status.
+
+For a chapter with matplotlib figures, also confirm the figures actually exist and
+are the size you expect:
+
+```bash
+grep -o 'data:image/png;base64' <scratch>/check.html | wc -l   # one per figure
+```
+
+and extract one to look at it. "It rendered" is not "it is right": three of this
+book's figures rendered perfectly while showing a trajectory that never left a fixed
+point.
 
 Export into the repo or a scratch directory — **never bare `/tmp`**, which fails under
 the sandbox with `PermissionError`.

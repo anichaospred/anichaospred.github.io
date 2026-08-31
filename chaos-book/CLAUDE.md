@@ -42,9 +42,14 @@ the short version of what must not be got wrong.
 
 ## Verifying a notebook change
 
-`marimo export html --sandbox notebooks/chNN.py -o <scratch>.html` *executes every cell* —
-grep the result for `marimo-error`, which must be 0. `html-wasm` only bundles, and will
-happily produce a page whose cells all raise in the reader's browser.
+`marimo export html --sandbox notebooks/chNN.py -o <scratch>.html` *executes every cell*.
+`html-wasm` only bundles, and will happily produce a page whose cells all raise in the
+reader's browser.
+
+Check **the exit code and stderr**, not just `grep -c marimo-error` — a notebook whose
+cells all raised still grepped to 0 while the command printed "some cells failed to
+execute". For figures, count the rendered images and extract one to look at: "it
+rendered" is not "it is right".
 
 ## Git workflow
 

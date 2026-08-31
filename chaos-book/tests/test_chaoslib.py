@@ -1130,6 +1130,85 @@ PALETTE_HEX = (
 )
 
 
+def test_every_palette_colour_is_usable_in_matplotlib():
+    """The palette is CSS, because Plotly eats it directly -- but two entries use
+    the rgba(...) form that matplotlib rejects.
+
+    This is the test that was missing. `C_CONTEXT` passed straight to `ax.plot`
+    raises at RENDER time, so a notebook cell fails while the import succeeds --
+    and it slipped past a `grep -c marimo-error` check, which reported zero.
+    Every palette entry must survive `mpl_colour` and then `to_rgba`.
+    """
+    import matplotlib
+    matplotlib.use("Agg")
+    from matplotlib.colors import to_rgba
+
+    names = [n for n in plotting.__all__ if n.startswith("C_")] + ["SCENE_BG"]
+    assert "C_CONTEXT" in names and "SCENE_BG" in names
+    for name in names:
+        raw = getattr(plotting, name)
+        converted = plotting.mpl_colour(raw)
+        to_rgba(converted)  # raises if matplotlib cannot use it
+
+
+def test_mpl_colour_preserves_alpha_and_passes_hex_through():
+    assert plotting.mpl_colour("#3730a3") == "#3730a3"
+    r, g, b, a = plotting.mpl_colour("rgba(150,150,165,0.16)")
+    assert a == pytest.approx(0.16)
+    assert r == pytest.approx(150 / 255)
+    # rgb() with no alpha is opaque
+    assert plotting.mpl_colour("rgb(10,20,30)")[3] == pytest.approx(1.0)
+
+
+def test_mpl_panels_returns_a_flat_axes_array_for_any_column_count():
+    """Callers must not have to special-case ncols == 1.
+
+    matplotlib's `subplots` returns a bare Axes for 1x1, an array for 1xN. The
+    helper normalises that, because a chapter that indexes axes[0] should keep
+    working when a panel is added or removed.
+    """
+    import matplotlib
+    matplotlib.use("Agg")
+
+    for ncols in (1, 2, 3, 4):
+        fig, axes = plotting.mpl_panels(ncols)
+        assert len(axes) == ncols
+        for ax in axes:
+            ax.plot([0, 1], [0, 1])  # must be a usable Axes
+        plotting.finish_mpl(fig)
+
+
+def test_mpl_panels_applies_titles_and_does_not_touch_global_rcparams():
+    """Importing or using chaoslib must not mutate the caller's matplotlib state.
+
+    A global rcParams change is exactly the hidden state that makes a marimo
+    notebook's output depend on which cell ran first.
+    """
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    before = dict(plt.rcParams)
+    fig, axes = plotting.mpl_panels(3, titles=("a", "b", "c"))
+    assert [ax.get_title() for ax in axes] == ["a", "b", "c"]
+    plotting.finish_mpl(fig, suptitle="whole figure")
+    after = dict(plt.rcParams)
+    changed = [k for k in before if before[k] != after.get(k)]
+    assert changed == [], f"chaoslib mutated global rcParams: {changed}"
+
+
+def test_mpl_panels_hides_the_top_and_right_spines():
+    """The house look, asserted so a future edit cannot quietly drop it."""
+    import matplotlib
+    matplotlib.use("Agg")
+
+    _, axes = plotting.mpl_panels(2)
+    for ax in axes:
+        assert not ax.spines["top"].get_visible()
+        assert not ax.spines["right"].get_visible()
+        assert ax.spines["left"].get_visible()
+
+
 def test_palette_entries_are_valid_css_colours():
     hex_colours = [getattr(plotting, name) for name in PALETTE_HEX]
     for colour in hex_colours:

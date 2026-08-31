@@ -4,7 +4,7 @@
 #   "marimo==0.23.9",
 #   "numpy",
 #   "scipy",
-#   "plotly",
+#   "matplotlib",
 # ]
 # ///
 """Chapter 6 -- The Lorenz (1963) system: the butterfly.
@@ -15,6 +15,13 @@ forecasting, and the bridge from a three-variable model to the real atmosphere.
 Part II of *An Interactive Chaos and Predictability Textbook*.
 
 Numerics come from `chaoslib`; this file holds the exposition and the figures.
+
+Phase space is drawn as STATIC 2-D projections (x-z, x-y) rather than a rotatable
+3-D scene. A 3-D view of the Lorenz attractor looks impressive and reads worse: the
+reader must hunt for a viewpoint before they can see the two lobes, the projection
+they land on is unrepeatable, and it costs far more in the browser. The x-z
+projection is the image everyone recognises as the butterfly, and it is the same
+every time.
 
 To edit:   marimo edit notebooks/ch06_lorenz63.py
 To export: make nb-one NB=ch06_lorenz63
@@ -54,8 +61,7 @@ async def imports():
         sys.path.insert(0, str(mo.notebook_dir().parent))
 
     import numpy as np
-    import plotly.graph_objects as go
-    from plotly.subplots import make_subplots
+    import matplotlib.pyplot as plt
 
     from chaoslib import integrate, lyapunov, plotting, systems
 
@@ -64,7 +70,9 @@ async def imports():
     # ---- the book's semantic palette and figure styling, from chaoslib ----
     # Defined once in chaoslib.plotting so every chapter means the same thing by
     # the same colour; re-bound to short local names here for figure code.
-    C_CONTEXT = plotting.C_CONTEXT
+    # C_CONTEXT is a CSS rgba string (Plotly's format); matplotlib needs a
+    # float tuple. Convert once here rather than at every call site.
+    C_CONTEXT = plotting.mpl_colour(plotting.C_CONTEXT)
     C_TRUTH = plotting.C_TRUTH
     C_PERT = plotting.C_PERT
     C_SPREAD = plotting.C_SPREAD
@@ -72,9 +80,11 @@ async def imports():
     C_FIXED = plotting.C_FIXED
     C_SAT = plotting.C_SAT
     C_START = plotting.C_START
-    TIME_SCALE = plotting.TIME_SCALE
-    style2d = plotting.style2d
-    style3d = plotting.style3d
+    # Static-figure helpers: a styled row of matplotlib panels, and the closing
+    # tight_layout call. The semantic colours above serve both figure kinds.
+    mpl_panels = plotting.mpl_panels
+    mpl_grid = plotting.mpl_grid
+    finish_mpl = plotting.finish_mpl
 
     # ---- numerics: thin adapters over tested chaoslib primitives ----
     def integrate_l63(s0, t_end, n=6000, sigma=SIGMA0, rho=RHO0, beta=BETA0,
@@ -132,9 +142,9 @@ async def imports():
 
     return (
         BETA0, C_CONTEXT, C_FIXED, C_MEAN, C_PERT, C_SAT, C_SPREAD, C_START,
-        C_TRUTH, RHO0, SIGMA0, TIME_SCALE, ftle_estimate, fixed_points, go,
-        hopf_threshold, integrate_l63, lyapunov, make_subplots, mo, np,
-        plotting, style2d, style3d, systems,
+        C_TRUTH, RHO0, SIGMA0, finish_mpl, ftle_estimate, fixed_points,
+        hopf_threshold, integrate_l63, lyapunov, mo, mpl_grid, mpl_panels,
+        np, plotting, plt, systems,
     )
 
 
@@ -181,8 +191,12 @@ def sdic_controls(mo):
         label="Log₁₀ initial separation  δ₀",
         show_value=True,
     )
+    # Default 15 MTU: with delta0 = 1e-4 and lambda ~ 0.85, the separation needs
+    # ln(8.5/1e-4)/0.85 ~ 13 MTU to saturate. At the previous default of 10 the
+    # curve stopped before the interesting part and the readout always said
+    # "forecasts still agree".
     sdic_lead = mo.ui.slider(
-        start=1, stop=30, step=1, value=10,
+        start=1, stop=30, step=1, value=15,
         label="Lead time (MTU)",
         show_value=True,
     )
@@ -193,11 +207,11 @@ def sdic_controls(mo):
 def ens_controls(mo):
     ic_choice = mo.ui.dropdown(
         options={
-            "Predictable region (near lobe center)": "predictable",
-            "Near saddle point (unstable equilibrium)": "saddle",
-            "Chaotic lobe transition": "chaotic",
+            "Slow region — spread grows late": "predictable",
+            "Typical point on the attractor": "typical",
+            "Fast region — spread grows early": "chaotic",
         },
-        value="Predictable region (near lobe center)",
+        value="Typical point on the attractor",
         label="Starting location on attractor",
     )
     perturb_exp = mo.ui.slider(
@@ -210,8 +224,11 @@ def ens_controls(mo):
         label="Ensemble size  N",
         show_value=True,
     )
+    # Default 20 MTU: at the previous 10 the ensemble spread never crossed the 90%
+    # threshold for ANY starting point, so all three predictability regimes
+    # collapsed into one and the shaded bands conveyed nothing.
     lead_time = mo.ui.slider(
-        start=1, stop=30, step=1, value=10,
+        start=1, stop=30, step=1, value=20,
         label="Lead time (MTU)",
         show_value=True,
     )
@@ -394,9 +411,9 @@ finite-time Lyapunov exponent $\lambda_1$ from a pair of nearby trajectories.
 # ===========================================================================
 @app.cell
 def display_section1_fig(
-    C_CONTEXT, C_FIXED, C_START, TIME_SCALE, beta_sl, ftle_estimate,
-    fixed_points, go, hopf_threshold, integrate_l63, mo, np, rho_sl,
-    show_transient, sigma_sl, style2d, style3d, x0_in, y0_in, z0_in,
+    C_CONTEXT, C_FIXED, C_START, C_TRUTH, beta_sl, finish_mpl, ftle_estimate,
+    fixed_points, hopf_threshold, integrate_l63, mo, mpl_panels, np, rho_sl,
+    show_transient, sigma_sl, x0_in, y0_in, z0_in,
 ):
     _sig, _rho, _beta = sigma_sl.value, rho_sl.value, beta_sl.value
     _s0 = [float(x0_in.value or 0.0), float(y0_in.value or 0.0), float(z0_in.value or 0.0)]
@@ -434,57 +451,77 @@ def display_section1_fig(
         if np.isfinite(_lam) and _lam > 0.02 else "— (no exponential divergence)"
     )
 
-    # ---- 3-D phase-space view ----
-    _f3 = go.Figure()
-    if show_transient.value and _tr.sum() > 1:
-        _f3.add_trace(go.Scatter3d(
-            x=_y[0, _tr], y=_y[1, _tr], z=_y[2, _tr], mode="lines",
-            line=dict(color="rgba(120,120,135,0.45)", width=2, dash="dot"),
-            name="transient", hoverinfo="skip",
-        ))
-    _f3.add_trace(go.Scatter3d(
-        x=_y[0, _at], y=_y[1, _at], z=_y[2, _at], mode="lines",
-        line=dict(color=_t[_at], colorscale=TIME_SCALE, width=2.4),
-        name="settled trajectory", hoverinfo="skip",
-    ))
-    _f3.add_trace(go.Scatter3d(
-        x=[_s0[0]], y=[_s0[1]], z=[_s0[2]], mode="markers",
-        marker=dict(size=6, color=C_START, line=dict(width=1, color="white")),
-        name=f"start ({_s0[0]:g}, {_s0[1]:g}, {_s0[2]:g})",
-    ))
-    _f3.add_trace(go.Scatter3d(
-        x=[p[0] for p in _fps.values()], y=[p[1] for p in _fps.values()],
-        z=[p[2] for p in _fps.values()], mode="markers+text",
-        marker=dict(size=5, color=C_FIXED, symbol="diamond"),
-        text=list(_fps), textposition="top center",
-        textfont=dict(size=11, color="#92600b"), name="fixed points",
-    ))
-    style3d(_f3, height=500,
-            title=f"Phase space   σ = {_sig:g},  ρ = {_rho:g},  β = {_beta:.2f}")
+    # ---- static phase-space projections + time series ----
+    # x-z first: that projection IS the butterfly, and putting it leftmost means the
+    # recognisable image is the first thing the reader sees.
+    _fig, _ax = mpl_panels(
+        3,
+        titles=(
+            "Phase space  (x–z)",
+            "Phase space  (x–y)",
+            "Convective intensity  x(t)",
+        ),
+    )
 
-    # ---- x(t) time series ----
-    _f2 = go.Figure()
-    _f2.add_vrect(x0=0, x1=_t_cut, fillcolor="rgba(120,120,135,0.07)",
-                  line_width=0, annotation_text="transient",
-                  annotation_position="top left", annotation_font_size=10)
-    _f2.add_trace(go.Scatter(
-        x=_t, y=_y[0], mode="lines", line=dict(color="#4338ca", width=1.6),
-        name="x(t)", hoverinfo="skip",
-    ))
-    for _k, _p in _fps.items():
-        if _k != "O":
-            _f2.add_hline(y=_p[0], line=dict(color=C_FIXED, width=1, dash="dot"),
-                          annotation_text=f"{_k}: x = {_p[0]:.1f}",
-                          annotation_font_size=10)
-    style2d(_f2, height=500, title="Convective intensity  x(t)")
-    _f2.update_xaxes(title_text="time (MTU)")
-    _f2.update_yaxes(title_text="x")
+    for _k, (_i, _j, _xl, _yl) in enumerate(
+        [(0, 2, "x", "z"), (0, 1, "x", "y")]
+    ):
+        if show_transient.value and _tr.sum() > 1:
+            _ax[_k].plot(
+                _y[_i, _tr], _y[_j, _tr], color=C_CONTEXT, linewidth=0.6,
+                linestyle=":", zorder=1,
+                label="transient" if _k == 0 else None,
+            )
+        # Thin, semi-transparent: the attractor is thousands of near-coincident
+        # passes, and a thick line hides its layered structure entirely.
+        _ax[_k].plot(
+            _y[_i, _at], _y[_j, _at], color=C_TRUTH, linewidth=0.35, alpha=0.65,
+            zorder=2, label="settled trajectory" if _k == 0 else None,
+        )
+        _ax[_k].plot(
+            _s0[_i], _s0[_j], marker="o", markersize=5, color=C_START,
+            markeredgecolor="white", markeredgewidth=0.8, zorder=5,
+            linestyle="none", label="start" if _k == 0 else None,
+        )
+        for _name, _p in _fps.items():
+            _ax[_k].plot(
+                _p[_i], _p[_j], marker="D", markersize=4.5, color=C_FIXED,
+                markeredgecolor="white", markeredgewidth=0.6, zorder=6,
+                linestyle="none",
+                label="fixed points" if (_k == 0 and _name == "O") else None,
+            )
+            _ax[_k].annotate(
+                _name, (_p[_i], _p[_j]), textcoords="offset points",
+                xytext=(5, 4), fontsize=8, color="#92600b", zorder=7,
+            )
+        _ax[_k].set_xlabel(_xl)
+        _ax[_k].set_ylabel(_yl)
+
+    _ax[0].legend(loc="upper left", fontsize=7, framealpha=0.9)
+
+    _ax[2].axvspan(0.0, _t_cut, color="#f1eefb", zorder=0)
+    _ax[2].annotate("transient", (0.4, 0.96), xycoords="axes fraction",
+                    fontsize=8, color="#6b6580", va="top")
+    _ax[2].plot(_t, _y[0], color=C_TRUTH, linewidth=0.7)
+    for _name, _p in _fps.items():
+        if _name != "O":
+            _ax[2].axhline(_p[0], color=C_FIXED, linewidth=0.9, linestyle=":")
+            _ax[2].annotate(f"{_name}: x = {_p[0]:.1f}", (0.99, _p[0]),
+                            xycoords=("axes fraction", "data"), ha="right",
+                            fontsize=7, color="#92600b", va="bottom")
+    _ax[2].set_xlabel("time (MTU)")
+    _ax[2].set_ylabel("x")
+
+    finish_mpl(
+        _fig,
+        suptitle=f"σ = {_sig:g},   ρ = {_rho:g},   β = {_beta:.3f}",
+    )
 
     mo.vstack([
         mo.md("### ⚙️ Controls"),
         mo.hstack([sigma_sl, rho_sl, beta_sl], gap="2.5rem", justify="start"),
         mo.hstack([x0_in, y0_in, z0_in, show_transient], gap="1.5rem", justify="start"),
-        mo.hstack([_f3, _f2], widths=[1, 1]),
+        _fig,
         mo.callout(
             mo.md(
                 f"**💡 Live readout** &nbsp;|&nbsp; σ = {_sig:g}, ρ = {_rho:g}, "
@@ -499,9 +536,6 @@ def display_section1_fig(
     return
 
 
-# ===========================================================================
-# Section 1 — callout
-# ===========================================================================
 @app.cell
 def display_section1_callout(mo):
     mo.callout(
@@ -622,12 +656,16 @@ def display_section2_experiment(mo):
 
 @app.cell
 def display_section2_interactive(
-    C_CONTEXT, C_PERT, C_SAT, C_SPREAD, C_START, C_TRUTH, attractor_ref,
-    attractor_size, go, integrate_l63, make_subplots, mo, np, sep_exp,
-    sdic_lead, style2d, style3d,
+    C_CONTEXT, C_FIXED, C_PERT, C_SAT, C_SPREAD, C_START, C_TRUTH, attractor_ref,
+    attractor_size, finish_mpl, integrate_l63, mo, mpl_grid, np, sdic_lead, sep_exp,
 ):
     # ---- two trajectories from (almost) the same start ----
-    _x0 = np.array([8.5, 8.5, 27.0])
+    # A point taken from the settled attractor trajectory. The obvious-looking
+    # [8.5, 8.5, 27.0] is NOT usable here: it sits 0.02 from the fixed point C+,
+    # so both trajectories spiral there for tens of MTU and the separation grows
+    # at ~0.09 MTU^-1 instead of ~0.9 -- the section would demonstrate the
+    # opposite of its point.
+    _x0 = attractor_ref[:, 0].copy()
     _delta0 = 10.0 ** sep_exp.value
     _T = sdic_lead.value
     _t, _traj_a = integrate_l63(_x0, _T, n=900, rtol=1e-11, atol=1e-13)
@@ -656,80 +694,79 @@ def display_section2_interactive(
     else:
         _regime, _ck = "🟢 Forecasts still agree — within the predictable window", "success"
 
-    # ---- 3-D phase-space view ----
-    _f3 = go.Figure()
-    _f3.add_trace(go.Scatter3d(
-        x=attractor_ref[0], y=attractor_ref[1], z=attractor_ref[2], mode="lines",
-        line=dict(color=C_CONTEXT, width=1), showlegend=False, hoverinfo="skip",
-    ))
-    _f3.add_trace(go.Scatter3d(
-        x=_traj_a[0], y=_traj_a[1], z=_traj_a[2], mode="lines",
-        line=dict(color=C_TRUTH, width=3), name="truth  A",
-    ))
-    _f3.add_trace(go.Scatter3d(
-        x=_traj_b[0], y=_traj_b[1], z=_traj_b[2], mode="lines",
-        line=dict(color=C_PERT, width=3), name="perturbed  B",
-    ))
-    _f3.add_trace(go.Scatter3d(
-        x=[_x0[0]], y=[_x0[1]], z=[_x0[2]], mode="markers",
-        marker=dict(size=6, color=C_START, line=dict(width=1, color="white")),
-        name=f"shared start  (δ₀ = 10^{sep_exp.value:.1f})",
-    ))
-    _f3.add_trace(go.Scatter3d(
-        x=[_traj_a[0, -1]], y=[_traj_a[1, -1]], z=[_traj_a[2, -1]], mode="markers",
-        marker=dict(size=6, color=C_TRUTH, symbol="square"), name=f"A at t = {_T} MTU",
-    ))
-    _f3.add_trace(go.Scatter3d(
-        x=[_traj_b[0, -1]], y=[_traj_b[1, -1]], z=[_traj_b[2, -1]], mode="markers",
-        marker=dict(size=6, color=C_PERT, symbol="square"), name=f"B at t = {_T} MTU",
-    ))
-    style3d(_f3, height=520,
-            title="Two trajectories from (almost) the same start")
+    # ---- 2x2: two static projections on top, two diagnostics below ----
+    _fig, (_axz, _axy, _axs, _axx) = mpl_grid(2, 2)
 
-    # ---- right column: log-separation over x(t) overlay ----
-    _f2 = make_subplots(
-        rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.09,
-        subplot_titles=("Separation |A − B|   (log scale)", "x(t) for each trajectory"),
-    )
-    _f2.add_trace(go.Scatter(
-        x=_t, y=_sep, mode="lines", line=dict(color=C_SPREAD, width=2.5),
-        fill="tozeroy", fillcolor="rgba(124,58,237,0.07)", name="|A − B|",
-    ), row=1, col=1)
+    for _a, (_i, _j, _xl, _yl, _ttl) in [
+        (_axz, (0, 2, "x", "z", "Phase space  (x–z)")),
+        (_axy, (0, 1, "x", "y", "Phase space  (x–y)")),
+    ]:
+        _a.plot(attractor_ref[_i], attractor_ref[_j], color=C_CONTEXT,
+                linewidth=0.4, zorder=1)
+        _a.plot(_traj_a[_i], _traj_a[_j], color=C_TRUTH, linewidth=1.1,
+                zorder=3, label="truth  A")
+        _a.plot(_traj_b[_i], _traj_b[_j], color=C_PERT, linewidth=1.1,
+                zorder=3, label="perturbed  B")
+        _a.plot(_x0[_i], _x0[_j], marker="o", markersize=5, color=C_START,
+                markeredgecolor="white", markeredgewidth=0.8, linestyle="none",
+                zorder=6, label="shared start")
+        _a.plot(_traj_a[_i, -1], _traj_a[_j, -1], marker="s", markersize=5,
+                color=C_TRUTH, linestyle="none", zorder=6, label=f"A at t = {_T}")
+        _a.plot(_traj_b[_i, -1], _traj_b[_j, -1], marker="s", markersize=5,
+                color=C_PERT, linestyle="none", zorder=6, label=f"B at t = {_T}")
+        _a.set_xlabel(_xl)
+        _a.set_ylabel(_yl)
+        _a.set_title(_ttl)
+    _axz.legend(loc="upper left", fontsize=6.5, framealpha=0.9, ncol=2)
+
+    # ---- separation, log scale ----
+    _axs.semilogy(_t, _sep, color=C_SPREAD, linewidth=1.8, label="|A − B|")
+    _axs.fill_between(_t, 1e-300, _sep, color=C_SPREAD, alpha=0.07)
     if _lam:
         _tw = _t[_win]
-        _f2.add_trace(go.Scatter(
-            x=_tw, y=_sep[_win][0] * np.exp(_lam * (_tw - _tw[0])), mode="lines",
-            line=dict(color="#f59e0b", width=1.5, dash="dot"),
-            name=f"e^(λt),  λ ≈ {_lam:.2f}",
-        ), row=1, col=1)
-    _f2.add_hline(y=attractor_size, line=dict(color=C_SAT, dash="dash", width=1.5),
-                  annotation_text="attractor diameter — fully random",
-                  annotation_position="top left", annotation_font_size=10, row=1, col=1)
-    _f2.add_trace(go.Scatter(
-        x=_t, y=_traj_a[0], mode="lines", line=dict(color=C_TRUTH, width=1.6),
-        name="x_A", showlegend=False,
-    ), row=2, col=1)
-    _f2.add_trace(go.Scatter(
-        x=_t, y=_traj_b[0], mode="lines", line=dict(color=C_PERT, width=1.6),
-        name="x_B", showlegend=False,
-    ), row=2, col=1)
+        _axs.semilogy(_tw, _sep[_win][0] * np.exp(_lam * (_tw - _tw[0])),
+                      color=C_FIXED, linewidth=1.2, linestyle=":",
+                      label=f"e^(λt),  λ ≈ {_lam:.2f}")
+    _axs.axhline(attractor_size, color=C_SAT, linewidth=1.2, linestyle="--")
+    _axs.annotate("attractor diameter — fully random", (0.02, attractor_size),
+                  xycoords=("axes fraction", "data"), fontsize=7,
+                  color="#b91c1c", va="bottom")
     if _t_div is not None:
-        for _r in (1, 2):
-            _f2.add_vline(x=_t_div, line=dict(color="#64748b", width=1, dash="dash"),
-                          row=_r, col=1)
-        _f2.add_annotation(x=_t_div, y=1.0, yref="y domain", row=1, col=1,
-                           text=f"paths split · t ≈ {_t_div:.1f}", showarrow=False,
-                           font=dict(size=10, color="#475569"), yshift=8)
-    style2d(_f2, height=520)
-    _f2.update_yaxes(type="log", title_text="|A − B|", row=1, col=1)
-    _f2.update_yaxes(title_text="x", row=2, col=1)
-    _f2.update_xaxes(title_text="lead time (MTU)", row=2, col=1)
-    _f2.update_layout(legend=dict(x=0.01, y=0.46, orientation="h"))
+        _axs.axvline(_t_div, color="#64748b", linewidth=0.9, linestyle="--")
+        # Horizontal, just under the top edge and offset from the line, so it does
+        # not sit on top of the separation curve.
+        # Mid-panel and left of the line: the top carries the saturation label and
+        # the bottom-right carries the legend.
+        _axs.annotate(f"split · t ≈ {_t_div:.1f}", (_t_div, 0.62),
+                      xycoords=("data", "axes fraction"), fontsize=7,
+                      color="#475569", va="center", ha="right",
+                      xytext=(-4, 0), textcoords="offset points",
+                      # The separation curve passes through this height, so the
+                      # label needs its own ground to be legible.
+                      bbox=dict(facecolor="white", alpha=0.85, edgecolor="none",
+                                boxstyle="round,pad=0.2"))
+    _axs.set_xlabel("lead time (MTU)")
+    _axs.set_ylabel("|A − B|")
+    _axs.set_title("Separation  (log scale)")
+    _axs.set_ylim(max(_sep.min() * 0.5, 1e-14), attractor_size * 3)
+    _axs.legend(loc="lower right", fontsize=7, framealpha=0.9)
+
+    # ---- x(t) for both ----
+    _axx.plot(_t, _traj_a[0], color=C_TRUTH, linewidth=1.0, label="x_A")
+    _axx.plot(_t, _traj_b[0], color=C_PERT, linewidth=1.0, label="x_B")
+    if _t_div is not None:
+        _axx.axvline(_t_div, color="#64748b", linewidth=0.9, linestyle="--")
+    _axx.set_xlabel("lead time (MTU)")
+    _axx.set_ylabel("x")
+    _axx.set_title("x(t) for each trajectory")
+    _axx.legend(loc="upper left", fontsize=7, framealpha=0.9)
+
+    finish_mpl(_fig, suptitle="Two trajectories from (almost) the same start")
 
     mo.vstack([
         mo.md("### ⚙️ Controls"),
         mo.hstack([sep_exp, sdic_lead], gap="4rem", justify="start"),
-        mo.hstack([_f3, _f2], widths=[1, 1]),
+        _fig,
         mo.callout(
             mo.md(
                 f"**💡 Live readout** &nbsp;|&nbsp; δ₀ = 10^{sep_exp.value:.1f} "
@@ -746,9 +783,6 @@ def display_section2_interactive(
     return
 
 
-# ===========================================================================
-# Section 2 — why this matters for weather forecasting
-# ===========================================================================
 @app.cell
 def display_section2_weather(mo):
     mo.md(r"""
@@ -897,18 +931,24 @@ def display_section3_experiment(mo):
 @app.cell
 def display_section3_interactive(
     C_CONTEXT, C_MEAN, C_PERT, C_SAT, C_SPREAD, C_START, C_TRUTH, attractor_ref,
-    attractor_size, go, ic_choice, integrate_l63, lead_time, mo, n_members, np,
-    perturb_exp, style2d, style3d,
+    attractor_size, finish_mpl, ic_choice, integrate_l63, lead_time, mo, mpl_grid,
+    n_members, np, perturb_exp,
 ):
+    # All three starts are points ON the attractor, chosen because their measured
+    # spread-growth horizons genuinely differ (t10 of roughly 11, 9 and 6.5 MTU).
+    # The previous options did not work: "predictable" was the fixed point C+ and
+    # "saddle" was near the origin, and from both the ensemble spread stayed under
+    # 1% of the attractor size for 20 MTU -- so the dropdown, whose whole purpose
+    # is to show that WHERE you start matters, showed nothing at all.
     _ic_map = {
-        "predictable": np.array([8.5, 8.5, 27.0]),
-        "saddle": np.array([0.1, 0.1, 0.1]),
-        "chaotic": np.array([-5.0, -7.0, 22.0]),
+        "predictable": attractor_ref[:, 2400].copy(),
+        "typical": attractor_ref[:, 0].copy(),
+        "chaotic": attractor_ref[:, 1500].copy(),
     }
     _ic_labels = {
-        "predictable": "near lobe centre — relatively stable region",
-        "saddle": "near origin — highly unstable saddle point",
-        "chaotic": "lobe-transition zone — rapid lobe switching",
+        "predictable": "slow region — spread grows late",
+        "typical": "a typical point on the attractor",
+        "chaotic": "fast region — spread grows early",
     }
     _x0 = _ic_map[ic_choice.value]
     _N = n_members.value
@@ -942,73 +982,91 @@ def display_section3_interactive(
     else:
         _regime, _ck = "🔴 Spread saturated — forecast is climatology", "danger"
 
-    # ---- 3-D phase-space view ----
-    _f3 = go.Figure()
-    _f3.add_trace(go.Scatter3d(
-        x=attractor_ref[0], y=attractor_ref[1], z=attractor_ref[2], mode="lines",
-        line=dict(color=C_CONTEXT, width=1), showlegend=False, hoverinfo="skip",
-    ))
-    for _i in range(_N):
-        _f3.add_trace(go.Scatter3d(
-            x=_trajs[_i, 0], y=_trajs[_i, 1], z=_trajs[_i, 2], mode="lines",
-            line=dict(color="rgba(124,58,237,0.25)", width=1.4),
-            name="members" if _i == 0 else "", showlegend=_i == 0, hoverinfo="skip",
-        ))
-    _f3.add_trace(go.Scatter3d(
-        x=_truth[0], y=_truth[1], z=_truth[2], mode="lines",
-        line=dict(color=C_TRUTH, width=3.5), name="truth (unperturbed)",
-    ))
-    _f3.add_trace(go.Scatter3d(
-        x=_mean[0], y=_mean[1], z=_mean[2], mode="lines",
-        line=dict(color=C_MEAN, width=3), name="ensemble mean",
-    ))
-    _f3.add_trace(go.Scatter3d(
-        x=_trajs[:, 0, 0], y=_trajs[:, 1, 0], z=_trajs[:, 2, 0], mode="markers",
-        marker=dict(size=4, color=C_START, opacity=0.9), name="t = 0  cloud",
-    ))
-    _f3.add_trace(go.Scatter3d(
-        x=_trajs[:, 0, -1], y=_trajs[:, 1, -1], z=_trajs[:, 2, -1], mode="markers",
-        marker=dict(size=4, color=C_PERT, opacity=0.9), name=f"t = {_T} MTU  cloud",
-    ))
-    style3d(_f3, height=520, eye=(1.5, 1.2, 0.9),
-            title=f"Ensemble in phase space  ·  IC {_ic_labels[ic_choice.value]}")
+    # ---- 2x2: projections above, spread/error and member x(t) below ----
+    _fig, (_axz, _axy, _axsp, _axx) = mpl_grid(2, 2)
 
-    # ---- spread vs. ensemble-mean error ----
-    _f2 = go.Figure()
-    for _s in (
-        dict(x0=0.0, x1=_t10, c="rgba(16,185,129,0.09)", lab="🟢 predictable"),
-        dict(x0=_t10, x1=_t90, c="rgba(245,158,11,0.10)", lab="🟠 semi-predictable"),
-        dict(x0=_t90, x1=_t_max, c="rgba(220,38,38,0.09)", lab="🔴 unpredictable"),
+    for _a, (_i, _j, _xl, _yl, _ttl) in [
+        (_axz, (0, 2, "x", "z", "Ensemble in phase space  (x–z)")),
+        (_axy, (0, 1, "x", "y", "Ensemble in phase space  (x–y)")),
+    ]:
+        _a.plot(attractor_ref[_i], attractor_ref[_j], color=C_CONTEXT,
+                linewidth=0.4, zorder=1)
+        # Members drawn first, thin and translucent: the point is the *envelope*
+        # they trace, not any individual member.
+        for _m in range(_N):
+            _a.plot(_trajs[_m, _i], _trajs[_m, _j], color=C_SPREAD,
+                    linewidth=0.5, alpha=0.28, zorder=2,
+                    label="members" if (_m == 0 and _a is _axz) else None)
+        _a.plot(_truth[_i], _truth[_j], color=C_TRUTH, linewidth=1.3, zorder=4,
+                label="truth" if _a is _axz else None)
+        _a.plot(_mean[_i], _mean[_j], color=C_MEAN, linewidth=1.2, zorder=4,
+                label="ensemble mean" if _a is _axz else None)
+        _a.plot(_trajs[:, _i, 0], _trajs[:, _j, 0], marker="o", markersize=2.6,
+                color=C_START, linestyle="none", zorder=5,
+                label="t = 0 cloud" if _a is _axz else None)
+        _a.plot(_trajs[:, _i, -1], _trajs[:, _j, -1], marker="o", markersize=2.6,
+                color=C_PERT, linestyle="none", zorder=5,
+                label=f"t = {_T} cloud" if _a is _axz else None)
+        _a.set_xlabel(_xl)
+        _a.set_ylabel(_yl)
+        _a.set_title(_ttl)
+    _axz.legend(loc="upper left", fontsize=6.5, framealpha=0.9, ncol=2)
+
+    # ---- spread vs ensemble-mean error, with the three regimes shaded ----
+    # Plain-text labels inside the figure: matplotlib's default font has no emoji
+    # glyphs, so an emoji here renders as an empty box. The coloured shading already
+    # carries the traffic-light meaning, and the emoji survive in the readout below.
+    for _x0s, _x1s, _col, _lab in (
+        (0.0, _t10, "#e8f7f1", "predictable"),
+        (_t10, _t90, "#fdf3e3", "semi-predictable"),
+        (_t90, _t_max, "#fbeaea", "unpredictable"),
     ):
-        if _s["x0"] < _s["x1"]:
-            _f2.add_vrect(x0=_s["x0"], x1=_s["x1"], fillcolor=_s["c"], line_width=0,
-                          annotation_text=_s["lab"], annotation_position="top left",
-                          annotation_font_size=10)
-    _f2.add_trace(go.Scatter(
-        x=_t, y=_rms_spread, mode="lines", line=dict(color=C_SPREAD, width=2.6),
-        fill="tozeroy", fillcolor="rgba(124,58,237,0.07)", name="ensemble spread",
-    ))
-    _f2.add_trace(go.Scatter(
-        x=_t, y=_mean_err, mode="lines",
-        line=dict(color="#475569", width=1.8, dash="dash"), name="ensemble-mean error",
-    ))
-    _f2.add_hline(y=attractor_size, line=dict(color=C_SAT, dash="dash", width=1.5),
-                  annotation_text="attractor size — fully unpredictable",
-                  annotation_position="top left", annotation_font_size=10)
-    _f2.add_hline(y=0.1 * attractor_size, line=dict(color=C_SPREAD, dash="dot", width=1.2),
-                  annotation_text="10 % threshold", annotation_position="bottom right",
-                  annotation_font_size=10)
-    style2d(_f2, height=520,
-            title=f"Spread & error  ·  N = {_N}  ·  δ₀ = 10^{perturb_exp.value:.1f}  ·  T = {_T} MTU")
-    _f2.update_xaxes(title_text="lead time (MTU)")
-    _f2.update_yaxes(title_text="RMS (state units)", type="log")
-    _f2.update_layout(legend=dict(x=0.01, y=0.99, orientation="h"))
+        if _x0s < _x1s:
+            _axsp.axvspan(_x0s, _x1s, color=_col, zorder=0)
+            # Along the BOTTOM: the top of this panel already carries the
+            # attractor-size and 10% threshold annotations, and three more labels
+            # up there collide with both of them and with each other.
+            _axsp.annotate(_lab, ((_x0s + _x1s) / 2, 0.02),
+                           xycoords=("data", "axes fraction"), ha="center",
+                           va="bottom", fontsize=6.5, color="#475569")
+    _axsp.semilogy(_t, _rms_spread, color=C_SPREAD, linewidth=1.8,
+                   label="ensemble spread", zorder=3)
+    _axsp.semilogy(_t, _mean_err, color="#475569", linewidth=1.3, linestyle="--",
+                   label="ensemble-mean error", zorder=3)
+    _axsp.axhline(attractor_size, color=C_SAT, linewidth=1.2, linestyle="--")
+    _axsp.annotate("attractor size — fully unpredictable", (0.02, attractor_size),
+                   xycoords=("axes fraction", "data"), fontsize=6.5,
+                   color="#b91c1c", va="bottom")
+    _axsp.axhline(0.1 * attractor_size, color=C_SPREAD, linewidth=1.0, linestyle=":")
+    _axsp.annotate("10 % threshold", (0.02, 0.1 * attractor_size),
+                   xycoords=("axes fraction", "data"), ha="left", fontsize=6.5,
+                   color="#7c3aed", va="bottom")
+    _axsp.set_xlabel("lead time (MTU)")
+    _axsp.set_ylabel("RMS (state units)")
+    _axsp.set_title("Spread and ensemble-mean error")
+    _axsp.legend(loc="center right", fontsize=7, framealpha=0.9)
+
+    # ---- every member's x(t), the classic spaghetti plot ----
+    for _m in range(_N):
+        _axx.plot(_t, _trajs[_m, 0], color=C_SPREAD, linewidth=0.5, alpha=0.3)
+    _axx.plot(_t, _truth[0], color=C_TRUTH, linewidth=1.3, label="truth")
+    _axx.plot(_t, _mean[0], color=C_MEAN, linewidth=1.2, label="ensemble mean")
+    _axx.set_xlabel("lead time (MTU)")
+    _axx.set_ylabel("x")
+    _axx.set_title("x(t): every member")
+    _axx.legend(loc="upper left", fontsize=7, framealpha=0.9)
+
+    finish_mpl(
+        _fig,
+        suptitle=f"N = {_N}  ·  δ₀ = 10^{perturb_exp.value:.1f}  ·  T = {_T} MTU  ·  "
+                 f"IC: {_ic_labels[ic_choice.value]}",
+    )
 
     mo.vstack([
         mo.md("### ⚙️ Controls"),
         mo.hstack([ic_choice, n_members], gap="3rem", justify="start"),
         mo.hstack([perturb_exp, lead_time], gap="3rem", justify="start"),
-        mo.hstack([_f3, _f2], widths=[1, 1]),
+        _fig,
         mo.callout(
             mo.md(
                 f"**💡 Live readout** &nbsp;|&nbsp; N = {_N} members &nbsp;·&nbsp; "
@@ -1025,9 +1083,6 @@ def display_section3_interactive(
     return
 
 
-# ===========================================================================
-# Section 3 — ensemble calibration note
-# ===========================================================================
 @app.cell
 def display_section3_calibration(mo):
     mo.md(r"""
@@ -1289,7 +1344,7 @@ def cell_further_reading(mo):
 
 ---
 *Notebook by Aneesh C. Subramanian.*
-*Built with [marimo](https://marimo.io), [NumPy](https://numpy.org), [SciPy](https://scipy.org), [Plotly](https://plotly.com).*
+*Built with [marimo](https://marimo.io), [NumPy](https://numpy.org), [SciPy](https://scipy.org), [Matplotlib](https://matplotlib.org).*
 """)
     return
 

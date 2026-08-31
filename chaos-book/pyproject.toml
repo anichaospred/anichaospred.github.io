@@ -7,7 +7,7 @@ name = "chaoslib"
 version = "0.1.0"
 description = "Shared Pyodide-safe primitives for the Interactive Chaos and Predictability textbook"
 requires-python = ">=3.11"
-dependencies = ["numpy", "scipy", "plotly"]
+dependencies = ["numpy", "scipy", "plotly", "matplotlib"]
 
 [tool.setuptools]
 packages = ["chaoslib"]

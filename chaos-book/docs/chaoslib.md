@@ -118,8 +118,18 @@ Semantic colours (`C_TRUTH`, `C_PERT`, `C_SPREAD`, `C_MEAN`, `C_FIXED`, `C_SAT`,
 `C_BG` (background / free forecast) and `C_ANALYSIS` (the DA estimate) — `TIME_SCALE`
 for colour-as-time, and `style2d` / `style3d`.
 
+**Two figure kinds.** `style2d`/`style3d` style *Plotly* panels, for chapters where
+hovering over a curve is part of the point. `mpl_panels`, `mpl_grid` and `finish_mpl`
+build *static matplotlib* figures, used for phase-space projections — a rotatable 3-D
+scene of the Lorenz attractor reads worse than a fixed x-z projection, and costs more.
+
+`mpl_colour` translates a palette entry for matplotlib. **Always route palette colours
+through it in a matplotlib figure:** the palette is written in CSS because Plotly eats
+it directly, and two entries (`C_CONTEXT`, `SCENE_BG`) use the `rgba(...)` form that
+matplotlib rejects at *render* time — so the cell fails while the import succeeds.
+
 The palette is tested for pairwise perceptual separation, because a DA figure shows six
-of these at once. One documented exception is allowed (`C_PERT` and `C_SAT`, separated
+of these at once, and every entry is tested for matplotlib usability. One documented exception is allowed (`C_PERT` and `C_SAT`, separated
 by line style rather than hue); everything else must clear a minimum RGB distance, so a
 new colour cannot be added as a shade of an existing one.
 
