@@ -2,6 +2,11 @@
 {{- /* Trim the leading slash so relURL prepends the baseURL path, keeping content
        baseURL-agnostic even though this book is served from the domain root. */ -}}
 {{- $src := .Get "src" | strings.TrimPrefix "/" | relURL -}}
+{{- /* The Jupyter download is derived from the same argument rather than passed
+       separately, so a chapter cannot end up linking someone else's notebook or
+       forgetting the link entirely. */ -}}
+{{- $ipynb := .Get "src" | replaceRE "^/nb/" "ipynb/" | replaceRE "\\.html$" ".ipynb" | relURL -}}
+{{- $stem := .Get "src" | replaceRE "^/nb/" "" | replaceRE "\\.html$" "" -}}
 <div class="marimo-embed">
   <button data-src="{{ $src }}"
     onclick="var f=document.createElement('iframe');f.src=this.dataset.src;f.allow='fullscreen';this.parentNode.replaceChild(f,this);">
@@ -9,4 +14,11 @@
     <small>runs Python in your browser — nothing to install; first load fetches ~10&nbsp;MB</small>
   </button>
   <noscript><a href="{{ $src }}">Open the notebook</a> (requires JavaScript).</noscript>
+  <p class="nb-download">
+    Prefer to run it yourself?
+    <a href="{{ $ipynb }}" download="{{ $stem }}.ipynb">Download as a Jupyter notebook</a>
+    — it installs its own dependencies in the first cell.
+    <span class="nb-download-note">The sliders are static in Jupyter; edit
+    <code>value=</code> and re-run to change a parameter.</span>
+  </p>
 </div>

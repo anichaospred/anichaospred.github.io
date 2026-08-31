@@ -88,6 +88,38 @@ Use `--mode edit` only for a chapter whose point is editing the code.
 header pins **marimo exactly** and leaves numpy/scipy/plotly floating — see
 *Reproducibility* below.
 
+### 3b. Downloadable Jupyter versions
+
+`make notebooks` also runs `scripts/export_ipynb.py`, producing one `.ipynb` per
+chapter in `site/static/ipynb/`. These are marimo's **own** `export ipynb` conversion
+(`--sort top-down`, so cells keep the chapter's reading order rather than being
+rearranged topologically) plus two additions a *downloaded* file needs:
+
+- **A dependency cell.** The PEP 723 header does not survive into `.ipynb`, so the
+  script reads the requirements out of it and emits a `%pip install` cell with the same
+  pins. A download therefore runs from a bare kernel.
+- **Bootstrap surgery.** A chapter resolves `chaoslib` by micropip-installing the
+  bundled wheel (browser) or adding the repo root to `sys.path` (locally). Neither works
+  for a downloaded file, so that block is stripped and `chaoslib` is pip-installed from
+  the public repository instead.
+
+The title comes from the chapter's own H1 and the "run it live" link is derived by
+locating the chapter in `site/content/part*/`, so chapter 20 gets `/part5/` rather than a
+hard-coded part.
+
+**What differs for the reader:** Jupyter cannot drive marimo's widgets, so sliders render
+as static controls at their default values; a parameter is changed by editing `value=`
+and re-running. Everything else — the numerics, the prose, the figures — is identical,
+and the figures do appear (marimo embeds them as PNGs inside its HTML output). Verified
+by executing a downloaded notebook in a clean environment with no repo checkout: zero
+errors, all figures present.
+
+The `marimo` shortcode derives each chapter's download link from the same `src` argument
+it uses for the embed, so a page cannot link the wrong notebook or forget the link.
+
+Requires `nbformat` (pinned in `requirements.txt`) — `marimo export ipynb` will not run
+without it.
+
 ### 4. Post-processing
 
 Immediately after export, `make notebooks`:
