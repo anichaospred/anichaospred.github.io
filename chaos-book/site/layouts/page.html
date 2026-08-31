@@ -1,9 +1,8 @@
 {{ define "main" }}
 <h1>{{ .Title }}</h1>
-{{ if or .Params.part .Params.lectures .Params.knob .Params.status }}
+{{ if or .Params.part .Params.knob .Params.status }}
 <div class="chapter-meta">
   {{ with .Params.part }}<span><strong>{{ . }}</strong></span>{{ end }}
-  {{ with .Params.lectures }}<span>ATOC 4500/5500: <strong>{{ . }}</strong></span>{{ end }}
   {{ with .Params.knob }}<span>Knob: <strong>{{ . }}</strong></span>{{ end }}
   {{ with .Params.status }}
     <span class="status-pill {{ if eq . "live" }}status-live{{ else }}status-planned{{ end }}">

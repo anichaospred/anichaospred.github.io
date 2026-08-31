@@ -2,13 +2,12 @@
 title: "Chapter 3 · The hierarchy of models"
 weight: 103
 part: "Part I — What predictability means"
-lectures: "L1"
 knob: 'which rung of the hierarchy'
 status: "planned"
 ---
 ## Overview
 
-The course's overarching goal is to *apply a hierarchy of models* to understand predictability, and this chapter is where the hierarchy is laid out and defended. Why should anything learned from three ordinary differential equations transfer to a coupled model with $10^9$ degrees of freedom? The honest answer is: some things do and some things do not, and the useful skill is knowing which.
+This book's organising claim is that predictability is best understood by *applying a hierarchy of models*, and this chapter is where that hierarchy is laid out and defended. Why should anything learned from three ordinary differential equations transfer to a coupled model with $10^9$ degrees of freedom? The honest answer is: some things do and some things do not, and the useful skill is knowing which.
 
 ## The planned notebook
 

@@ -2,7 +2,6 @@
 title: "Chapter 18 · Variational data assimilation"
 weight: 518
 part: "Part V — The machinery of prediction"
-lectures: "L11"
 knob: 'window length, $\mathbf{B}$'
 status: "planned"
 ---

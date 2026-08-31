@@ -13,8 +13,6 @@ The strange attractor, sensitive dependence on initial conditions, ensemble
 forecasting, and the bridge from a three-variable model to the real atmosphere.
 
 Part II of *An Interactive Chaos and Predictability Textbook*.
-Serves ATOC 4500/5500 lecture 7 (chaos and predictability limits), and seeds
-lectures 4-5 (error growth) and 10 (probabilistic forecast design).
 
 Numerics come from `chaoslib`; this file holds the exposition and the figures.
 
@@ -228,10 +226,8 @@ def display_title(mo):
     mo.md(r"""
 # Chapter 6 · The Lorenz (1963) System: the Butterfly
 
-**Part II — From regular motion to chaos.** *Serves ATOC 4500/5500 lecture 7;
-seeds lectures 4–5 and 10.*
+**Part II — From regular motion to chaos.**
 
-This tutorial accompanies the lecture on chaos and predictability in the atmosphere.
 Scroll from top to bottom and interact with each panel before
 reading the explanation beneath it — building intuition by *doing*
 is more effective than reading first.

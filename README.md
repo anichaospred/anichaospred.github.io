@@ -4,11 +4,8 @@ Source for **<https://anichaospred.github.io>** — a browser-runnable textbook 
 and predictability in weather and climate, built from [marimo](https://marimo.io)
 notebooks exported to WebAssembly and served as a [Hugo](https://gohugo.io) site.
 
-Companion to **ATOC 4500/5500 *Chaos and Predictability*** at CU Boulder, and
-deliberately broader than that course. See
-[`chaos-book/PLAN.md`](chaos-book/PLAN.md) for the full outline and
-[the course mapping page](https://anichaospred.github.io/course/) for which chapters
-serve which lectures.
+See [`chaos-book/PLAN.md`](chaos-book/PLAN.md) for the full outline and the order
+chapters are being written in.
 
 Sibling project: the [interactive GFD textbook](https://anigfd.github.io).
 
@@ -16,7 +13,7 @@ Sibling project: the [interactive GFD textbook](https://anigfd.github.io).
 
 ```
 chaos-book/
-  PLAN.md          the book's spine: parts, chapters, the knob and lectures for each
+  PLAN.md          the book's spine: parts, chapters, and the knob for each
   NOTATION.md      mandatory symbols and sign conventions (mounted as the site's /notation/)
   chaoslib/        shared Pyodide-safe numerics -- all chapters import from here
   notebooks/       one marimo notebook per chapter, plain .py

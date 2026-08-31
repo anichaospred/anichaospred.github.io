@@ -2,7 +2,6 @@
 title: "Chapter 19 · Ensemble data assimilation"
 weight: 519
 part: "Part V — The machinery of prediction"
-lectures: "L12"
 knob: 'ensemble size, localisation radius'
 status: "planned"
 ---

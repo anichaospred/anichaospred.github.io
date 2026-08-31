@@ -40,7 +40,6 @@ def _(mo):
 
         **What you will be able to do afterwards.** <The concrete new capability.>
 
-        *Serves ATOC 4500/5500 lecture(s): <N>.*
         """
     )
     return

@@ -2,7 +2,6 @@
 title: "Chapter 28 · Has predictability changed over time?"
 weight: 728
 part: "Part VII — Frontiers"
-lectures: "L23"
 knob: 'epoch'
 status: "planned"
 ---
@@ -16,4 +15,4 @@ Lorenz 96 with a slowly increasing forcing: skill measured with a fixed 'model' 
 
 ## Further reading
 
-- *[citations needed — follow the course guest lecture]*
+- *[citations needed]*

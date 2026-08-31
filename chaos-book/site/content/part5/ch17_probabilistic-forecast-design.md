@@ -2,7 +2,6 @@
 title: "Chapter 17 · Probabilistic forecast design"
 weight: 517
 part: "Part V — The machinery of prediction"
-lectures: "L10"
 knob: 'ensemble size, perturbation strategy'
 status: "planned"
 ---

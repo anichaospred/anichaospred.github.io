@@ -2,7 +2,6 @@
 title: "Chapter 16 · Adjoint sensitivity and optimal perturbations"
 weight: 516
 part: "Part V — The machinery of prediction"
-lectures: "L9"
 knob: 'optimisation time $\tau$'
 status: "planned"
 ---

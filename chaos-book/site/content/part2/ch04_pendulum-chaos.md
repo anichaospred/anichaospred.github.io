@@ -2,7 +2,6 @@
 title: "Chapter 4 · Regular motion and why it is predictable"
 weight: 204
 part: "Part II — From regular motion to chaos"
-lectures: "chaos and predictability limits"
 knob: '$\theta_0$, $\delta_0$'
 status: "live"
 ---

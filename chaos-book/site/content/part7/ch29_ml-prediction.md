@@ -2,7 +2,6 @@
 title: "Chapter 29 · Machine learning and data-driven prediction"
 weight: 729
 part: "Part VII — Frontiers"
-lectures: "L22, L26"
 knob: 'rollout length, training-set size'
 status: "planned"
 ---

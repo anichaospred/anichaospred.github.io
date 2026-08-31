@@ -2,7 +2,6 @@
 title: "Chapter 15 · Tangent linear and adjoint models"
 weight: 515
 part: "Part V — The machinery of prediction"
-lectures: "L8"
 knob: '$\tau$, perturbation amplitude'
 status: "planned"
 ---

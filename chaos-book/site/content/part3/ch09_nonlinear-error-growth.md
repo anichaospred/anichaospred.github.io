@@ -2,7 +2,6 @@
 title: "Chapter 9 · Error growth beyond the linear regime"
 weight: 309
 part: "Part III — Quantifying chaos and predictability"
-lectures: "L4–5"
 knob: '$\delta_0$'
 status: "planned"
 ---

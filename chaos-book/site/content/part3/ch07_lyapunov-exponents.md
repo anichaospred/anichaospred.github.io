@@ -2,7 +2,6 @@
 title: "Chapter 7 · Lyapunov exponents and doubling times"
 weight: 307
 part: "Part III — Quantifying chaos and predictability"
-lectures: "L4–5, L7"
 knob: '$\rho$ across the transition'
 status: "planned"
 ---

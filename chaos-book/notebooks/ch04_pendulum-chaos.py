@@ -13,7 +13,6 @@ Single vs. double pendulum: the minimal demonstration that nonlinearity alone
 does not produce chaos -- phase-space dimension does.
 
 Part II of *An Interactive Chaos and Predictability Textbook*.
-Serves ATOC 4500/5500: the "chaos and predictability limits" thread.
 
 Numerics come from `chaoslib`; this file holds the exposition and the figures.
 
@@ -140,8 +139,7 @@ def display_title(mo):
     mo.md(r"""
 # Chapter 4 · One Pendulum, Two Pendulums: From Perfectly Regular to Chaotic
 
-**Part II — From regular motion to chaos.** *Serves ATOC 4500/5500: chaos and
-predictability limits.*
+**Part II — From regular motion to chaos.**
 
 **The forecasting question.** Weather models are nonlinear, and nonlinearity is
 usually blamed for the two-week forecast limit. But nonlinearity by itself is not
