@@ -2,7 +2,6 @@
 title: "Chapter 12 · Scale-dependent error growth and the intrinsic limit"
 weight: 412
 part: "Part IV — Many scales, many degrees of freedom"
-lectures: "L7"
 knob: 'the scale of the initial error'
 status: "planned"
 ---

@@ -2,7 +2,6 @@
 title: "Chapter 13 · Error growth in operational models"
 weight: 413
 part: "Part IV — Many scales, many degrees of freedom"
-lectures: "L4–5, L7"
 knob: 'forecast lead'
 status: "planned"
 ---

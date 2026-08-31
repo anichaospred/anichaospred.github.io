@@ -9,7 +9,7 @@ See [`architecture.md`](architecture.md) for how the build works and
 
 - Read the chapter's entry in [`PLAN.md`](../PLAN.md). It specifies the **forecasting
   question**, the notebook concept, the **knob** (the 1–3 parameters the reader
-  varies), and which ATOC 4500/5500 lecture(s) the chapter serves.
+  varies).
 - Read [`NOTATION.md`](../NOTATION.md). The symbols and sign conventions there are
   mandatory. A new symbol goes into NOTATION.md in the same PR.
 - Check [`chaoslib.md`](chaoslib.md) for primitives you can reuse. Chapters share
@@ -69,7 +69,7 @@ additive — resolve by keeping both sides.
 
 Copy `notebooks/_template.py` to `notebooks/chNN_slug.py`. Standard section order:
 
-1. **Title, the forecasting question, and the lecture tag.** Open with something a
+1. **Title and the forecasting question.** Open with something a
    forecaster would ask. The dynamical-systems machinery arrives as the answer, never
    as the premise — this book is weather/climate-first throughout.
 2. **The equations**, in the notation of `NOTATION.md`. The printed equation must be
@@ -109,7 +109,6 @@ Create `site/content/partN/chNN_slug.md`. Front matter matches the neighbours:
 title: "Chapter NN · <Title>"
 weight: <partN × 100 + NN>
 part: "Part N — <Part title>"
-lectures: "<ATOC 4500/5500 lecture(s), or omit>"
 knob: "<the parameters the reader varies>"
 status: live        # or: planned
 ---

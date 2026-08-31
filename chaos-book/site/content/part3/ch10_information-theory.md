@@ -2,7 +2,6 @@
 title: "Chapter 10 · Information theory and predictability"
 weight: 310
 part: "Part III — Quantifying chaos and predictability"
-lectures: "L1, L7"
 knob: 'lead time, bin count'
 status: "planned"
 ---

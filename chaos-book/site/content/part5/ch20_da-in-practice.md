@@ -2,7 +2,6 @@
 title: "Chapter 20 · Data assimilation in practice"
 weight: 520
 part: "Part V — The machinery of prediction"
-lectures: "L14"
 knob: 'observation density and error'
 status: "planned"
 ---

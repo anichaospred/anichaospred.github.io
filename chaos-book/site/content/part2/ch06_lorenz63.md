@@ -2,7 +2,6 @@
 title: "Chapter 6 · The Lorenz (1963) system: the butterfly"
 weight: 206
 part: "Part II — From regular motion to chaos"
-lectures: "L7 (seeds L4–5, L10)"
 knob: '$\sigma$, $\rho$, $\beta$'
 status: "live"
 ---

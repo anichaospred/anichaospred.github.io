@@ -2,7 +2,6 @@
 title: "Chapter 24 · The ocean's role: interannual-to-decadal prediction"
 weight: 624
 part: "Part VI — Predictability of the second kind"
-lectures: "L17–18"
 knob: 'initialisation lead'
 status: "planned"
 ---

@@ -2,7 +2,6 @@
 title: "Chapter 2 · A short history of numerical weather prediction"
 weight: 102
 part: "Part I — What predictability means"
-lectures: "L2–3"
 knob: 'imbalance amplitude'
 status: "planned"
 ---

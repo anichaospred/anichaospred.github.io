@@ -2,7 +2,6 @@
 title: "Chapter 11 · Lorenz 96: a many-variable atmosphere analogue"
 weight: 411
 part: "Part IV — Many scales, many degrees of freedom"
-lectures: "L4–5, L7"
 knob: '$F$, $N$'
 status: "planned"
 ---

@@ -4,10 +4,6 @@
 
 **Site:** <https://anichaospred.github.io> — Hugo, notebooks exported to HTML, run
 in-browser via Pyodide/WASM. No server-side compute anywhere.
-**Course it serves:** ATOC 4500/5500 *Chaos and Predictability*, CU Boulder
-(cross-listed undergraduate/graduate). The book is deliberately **broader** than the
-course; every chapter records which lecture(s) it serves, and `/course/` carries the
-full mapping.
 **Audience:** upper-level undergraduates and first-year graduate students in
 atmospheric, oceanic and climate science; also applied-math and physics students who
 want the geophysical application rather than the abstract theory.
@@ -19,7 +15,7 @@ required.
 
 ## 1. The thesis
 
-Taken from the course's own overarching learning goal:
+One sentence, which the whole book is organised around taking literally:
 
 > **Apply a hierarchy of models to understand predictability in nonlinear dynamical
 > systems.**
@@ -62,8 +58,6 @@ interactive notebook**. ★ marks a chapter that is live; the rest are stubs car
 an abstract and the planned knob, so the shape of the book is visible from the
 start and no link is dead.
 
-Notation: `[L#]` = the ATOC 4500/5500 lecture(s) served. **†** = material beyond the
-course syllabus.
 
 ### Part I — What predictability means
 
@@ -71,33 +65,33 @@ course syllabus.
    the first kind (initial conditions) and the second (boundary forcing); the forecast
    as a probability distribution rather than a trajectory. *Notebook:* the same L63
    forecast scored three ways — single run, ensemble, climatology — so the reader sees
-   that "skill" depends on the question asked. *Knob:* lead time. `[L1]`
+   that "skill" depends on the question asked. *Knob:* lead time.
 2. **A short history of numerical weather prediction** — Richardson's forecast
    factory and why his 1922 hand-computation failed; Bjerknes' programme; the 1950
    ENIAC barotropic forecasts; the growth of operational skill. *Notebook:* the
    Richardson problem — integrate an unbalanced initial state and watch spurious
    gravity waves swamp the signal, then initialise it in balance. *Knob:* imbalance
-   amplitude. `[L2–3]`
+   amplitude.
 3. **The hierarchy of models** — From the logistic map to CESM: what each rung is
    for, and the argument that a three-variable model can teach something true about a
    $10^9$-variable one. *Notebook:* the same predictability diagnostic (doubling
    time, normalised) computed across the logistic map, L63, L96 and 2-D turbulence.
-   *Knob:* which rung. `[L1]` †
+   *Knob:* which rung.
 
 ### Part II — From regular motion to chaos
 
 4. ★ **Regular motion and why it is predictable: one pendulum, two pendulums** —
    Degrees of freedom, phase-space dimension, Poincaré–Bendixson; why the *exact*
    nonlinear pendulum is still perfectly predictable, and what changes when a second
-   rod is added. *Knob:* $\theta_0$, $\delta_0$. †
+   rod is added. *Knob:* $\theta_0$, $\delta_0$.
 5. **Maps, bifurcations, and the routes to chaos** — The logistic map, period
    doubling, the Feigenbaum constant, intermittency; regime transitions as
    bifurcations. *Notebook:* cobweb plot beside a live bifurcation diagram, with the
-   measured $\delta$. *Knob:* $r$. †
+   measured $\delta$. *Knob:* $r$.
 6. ★ **The Lorenz (1963) system: the butterfly** — The Rayleigh–Bénard truncation,
    the three fixed points, the Hopf bifurcation at $\rho_H \approx 24.74$, the strange
    attractor, sensitive dependence, and the first ensemble. *Knob:*
-   $\sigma, \rho, \beta$. `[L7]`
+   $\sigma, \rho, \beta$.
 
 ### Part III — Quantifying chaos and predictability
 
@@ -105,40 +99,39 @@ course syllabus.
    via the Benettin algorithm; global vs. finite-time exponents, and why the second is
    what governs *today's* forecast. *Notebook:* the L63 spectrum, with the exact check
    $\sum_i \lambda_i = -(\sigma+1+\beta)$ shown live. *Knob:* $\rho$ across the
-   transition. `[L4–5, L7]`
+   transition.
 8. **Attractors, fractal dimension, and entropy** — Correlation dimension,
    Kaplan–Yorke, Kolmogorov–Sinai entropy as an information-loss rate; Pesin's
    identity. *Notebook:* $\ln C(r)$ vs. $\ln r$ with the scaling window exposed as a
    slider, so the reader discovers how easily a dimension is mis-measured. *Knob:* the
-   fit window. `[L7]` †
+   fit window.
 9. **Error growth beyond the linear regime** — Lorenz's logistic error-growth model;
    saturation; why a doubling time alone misstates the horizon. *Notebook:* fit
    exponential and logistic models to the same measured curve and compare the horizons
-   they imply. *Knob:* $\delta_0$. `[L4–5]`
+   they imply. *Knob:* $\delta_0$.
 10. **Information theory and predictability** — Entropy, relative entropy and mutual
     information as predictability measures; the signal and dispersion components of
     forecast information; a horizon that needs no assumption of exponential growth.
     *Notebook:* $I(x(0); x(\tau))$ against lead time, beside the Lyapunov estimate.
-    *Knob:* lead time, bin count. `[L1, L7]`
+    *Knob:* lead time, bin count.
 
 ### Part IV — Many scales, many degrees of freedom
 
 11. **Lorenz 96: a many-variable atmosphere analogue** — Spatiotemporal chaos; the
     Lyapunov spectrum; 13 positive exponents at $N=40, F=8$; scaling with $N$ and $F$.
     *Notebook:* Hovmöller diagram beside the live spectrum. *Knob:* $F$, $N$.
-    `[L4–5, L7]`
 12. **Scale-dependent error growth and the intrinsic limit** — Lorenz (1969);
     multiscale L96 (Lorenz 2005); the upscale error cascade; the case for a *finite*
     limit that no observing system can defeat. *Notebook:* seed error at one scale and
-    watch it climb the spectrum. *Knob:* the scale of the initial error. `[L7]`
+    watch it climb the spectrum. *Knob:* the scale of the initial error.
 13. **Error growth in operational models** — Lorenz (1982) and forecast-error
     statistics; from an idealised $\lambda$ to real doubling times; the lagged-forecast
     method for estimating predictability from an operational archive. *Knob:* forecast
-    lead. `[L4–5, L7]`
+    lead.
 14. **From chaos to turbulence** — Dissipative low-order chaos vs. fully developed
     turbulence; predictability in 2-D and quasi-geostrophic flow; error growth as a
     spectral process. *Reuse:* the existing `real_butterfly_effect` and `sqgturb`
-    work. *Knob:* Reynolds/resolution. †
+    work. *Knob:* Reynolds/resolution.
 
 ### Part V — The machinery of prediction
 
@@ -146,71 +139,71 @@ course syllabus.
     $\langle \mathbf{M}x, y\rangle = \langle x, \mathbf{M}^{\!\top}y\rangle$; the
     window of validity. *Notebook:* the finite-difference validation curve — the
     reader watches the discrepancy fall linearly in the perturbation amplitude, the
-    defining test of a correct tangent linear model. *Knob:* $\tau$, amplitude. `[L8]`
+    defining test of a correct tangent linear model. *Knob:* $\tau$, amplitude.
 16. **Adjoint sensitivity and optimal perturbations** — Singular vectors vs. Lyapunov
     vectors; sensitivity to the initial state and to observations; targeted observing.
     *Notebook:* the leading singular vector of L63/L96 over a chosen window, and the
     amplification it achieves against the Lyapunov estimate. *Knob:* optimisation
-    time. `[L9]`
+    time.
 17. **Probabilistic forecast design** — Ensemble construction (singular vectors, bred
     vectors, EDA); reliability; CRPS, Brier score, rank histograms; the value of a
     probabilistic forecast to a decision. *Notebook:* build an ensemble three ways and
-    score all three. *Knob:* ensemble size, perturbation strategy. `[L10]`
+    score all three. *Knob:* ensemble size, perturbation strategy.
 18. **Variational data assimilation** — 3D-Var; 4D-Var; the incremental form; why the
     adjoint is what makes the gradient affordable. *Notebook:* 4D-Var on L63 with the
-    cost-function descent shown live. *Knob:* window length, $\mathbf{B}$. `[L11]`
+    cost-function descent shown live. *Knob:* window length, $\mathbf{B}$.
 19. **Ensemble data assimilation** — The EnKF and ETKF; sampling error, localisation
     and inflation; hybrid methods. *Notebook:* EnKF on L96 with localisation radius
     and inflation as sliders, and the filter-divergence cliff. *Knob:* ensemble size,
-    localisation. `[L12]`
+    localisation.
 20. **Data assimilation in practice** — Cycling DA; analysis error as the floor on
     forecast error; the logarithmic return on better observations,
     $\Delta t = \ln 10/\lambda \approx 6.5$ days per decade of error reduction.
     *Reuse:* the existing `da_l63_tutorial.py` (3DVAR/4DVAR/EnKF on the same system).
-    *Knob:* observation density and error. `[L14]`
+    *Knob:* observation density and error.
 21. **Model error and the imperfect-model problem** — Stochastic parameterisation;
     model-error growth vs. initial-condition error growth; the imperfect-model
     scenario. *Notebook:* forecast L96 with a wrong $F$ and separate the two error
-    sources. *Knob:* model bias. †
+    sources. *Knob:* model bias.
 22. **Forecast verification and the practical horizon** — Anomaly correlation; the
     ECMWF skill record *[citation needed]*; how the practical horizon has advanced
-    while the intrinsic one has not. *Knob:* threshold defining "useful". `[L1, L14]`
+    while the intrinsic one has not. *Knob:* threshold defining "useful".
 
 ### Part VI — Predictability of the second kind: from S2S to climate
 
 23. **Boundary-forced predictability and the S2S window** — ENSO, the MJO, sudden
     stratospheric warmings, monsoon onset; the "predictability desert" and why it is
     not empty. *Notebook:* L63 with a slowly varying $\rho$ — predictable statistics
-    over an unpredictable trajectory. *Knob:* forcing period and amplitude. `[L16]`
+    over an unpredictable trajectory. *Knob:* forcing period and amplitude.
 24. **The ocean's role: interannual-to-decadal prediction** — Initialised prediction;
     ocean heat content as the memory; drift, bias and the need for
-    re-forecasts. `[L17–18]`
+    re-forecasts.
 25. **Climate prediction and projection** — Why the attractor's *statistics* are
     predictable when its trajectory is not; forced response vs. internal variability;
-    the initialised/uninitialised distinction. `[L19–20]`
+    the initialised/uninitialised distinction.
 26. **Earth system prediction** — Coupled, carbon-cycle and cryosphere components;
-    what "initialising" a slow component means; frontiers. `[L15, L21]`
+    what "initialising" a slow component means; frontiers.
 27. **Regimes, bistability, and tipping points** — Multiple attractors; noise-induced
     transitions; early-warning indicators and their failure modes. *Notebook:* a
-    double-well system with noise; variance and autocorrelation as warning signals. †
+    double-well system with noise; variance and autocorrelation as warning signals.
 
 ### Part VII — Frontiers
 
 28. **Has predictability changed over time?** — Non-stationary predictability in a
     changing climate; separating a trend in skill from a trend in the underlying
-    predictability. `[L23]`
+    predictability.
 29. **Machine learning and data-driven prediction** — Do learned emulators inherit
     the right Lyapunov spectrum and error-growth rate? Stability of long rollouts.
     *Connects to* the `ai-models-sensitivity` work. *Notebook:* train a small
-    surrogate on L96 and compare its spectrum with the truth's. `[L22, L26]`
+    surrogate on L96 and compare its spectrum with the truth's.
 
 ### Part VIII — Structure (optional, terminal)
 
 30. **Ergodic theory and invariant measures** — Time averages vs. ensemble averages;
-    what "climate" means mathematically; when the two coincide. †
+    what "climate" means mathematically; when the two coincide.
 31. **The Koopman operator** — Linear representations of nonlinear dynamics; modes
     and eigenvalues; the connection to DMD. *Connects to* the `quantum-koopman-da`
-    work. †
+    work.
 
 > Part VIII is deliberately terminal and skippable. It rewards a reader who wants the
 > structure behind the results, without gating the main path.
@@ -233,7 +226,7 @@ the corresponding sections rather than a general bibliography.
 
 | Source | Role |
 |---|---|
-| Palmer & Hagedorn (2006), *Predictability of Weather and Climate* | The course's primary text; the natural companion for Parts I, IV, VI |
+| Palmer & Hagedorn (2006), *Predictability of Weather and Climate* | The standard collection; the natural companion for Parts I, IV, VI |
 | Kalnay (2003), *Atmospheric Modeling, Data Assimilation and Predictability* | The anchor for Part V (adjoints, variational and ensemble DA) |
 | Lorenz (1963), *Deterministic nonperiodic flow* | Chapter 6 |
 | Lorenz (1969), *The predictability of a flow which possesses many scales of motion* | Chapter 12 |

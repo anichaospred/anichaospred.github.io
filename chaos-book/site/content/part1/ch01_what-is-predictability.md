@@ -2,7 +2,6 @@
 title: "Chapter 1 · What is predictability?"
 weight: 101
 part: "Part I — What predictability means"
-lectures: "L1"
 knob: 'lead time'
 status: "planned"
 ---

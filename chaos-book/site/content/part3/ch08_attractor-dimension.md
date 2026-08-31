@@ -2,7 +2,6 @@
 title: "Chapter 8 · Attractors, fractal dimension, and entropy"
 weight: 308
 part: "Part III — Quantifying chaos and predictability"
-lectures: "L7"
 knob: 'the scaling window'
 status: "planned"
 ---

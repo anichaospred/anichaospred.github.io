@@ -1,8 +1,8 @@
 """The book's figure design system: one palette, two styling helpers.
 
 Lifted verbatim (colours and layout values) from the Lorenz 63 notebook already
-running at aneeshcs.com/chaos, so the standalone book and the course portal look
-like the same publication. The violet accent is this book's identity, distinct
+already published at aneeshcs.com/chaos, so the two look like the same
+publication. The violet accent is this book's identity, distinct
 from the GFD textbook's sky-blue.
 
 Semantic, not decorative: each colour means one thing across every chapter, so a
@@ -30,7 +30,7 @@ __all__ = [
     "style3d",
 ]
 
-# ---- semantic palette (violet accent; see also the /chaos/ section CSS) ----
+# ---- semantic palette (violet accent: this book's identity) ----
 C_CONTEXT = "rgba(150,150,165,0.16)"  # faint reference attractor, drawn behind
 C_TRUTH = "#3730a3"  # indigo    -- truth / control run
 C_PERT = "#e11d48"  # rose      -- perturbed forecast

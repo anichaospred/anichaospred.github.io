@@ -1,6 +1,6 @@
 """Data assimilation on the book's low-order systems.
 
-Three schemes, deliberately in the order the course introduces them, all sharing
+Four schemes, in the order the book introduces them, all sharing
 one interface so a chapter can swap between them and compare honestly:
 
 * :func:`kalman_filter_update` -- the linear-Gaussian optimum, the yardstick.

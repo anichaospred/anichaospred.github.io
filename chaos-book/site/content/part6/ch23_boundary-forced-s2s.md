@@ -2,7 +2,6 @@
 title: "Chapter 23 · Boundary-forced predictability and the S2S window"
 weight: 623
 part: "Part VI — Predictability of the second kind"
-lectures: "L16"
 knob: 'forcing period and amplitude'
 status: "planned"
 ---

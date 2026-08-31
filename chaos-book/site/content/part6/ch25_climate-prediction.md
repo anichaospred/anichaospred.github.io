@@ -2,7 +2,6 @@
 title: "Chapter 25 · Climate prediction and projection"
 weight: 625
 part: "Part VI — Predictability of the second kind"
-lectures: "L19–20"
 knob: 'forced trend vs. internal variability'
 status: "planned"
 ---

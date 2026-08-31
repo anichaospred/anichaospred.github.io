@@ -2,7 +2,6 @@
 title: "Chapter 22 · Forecast verification and the practical horizon"
 weight: 522
 part: "Part V — The machinery of prediction"
-lectures: "L1, L14"
 knob: 'the threshold defining ''useful'''
 status: "planned"
 ---
