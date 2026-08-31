@@ -285,7 +285,10 @@ By the end of this notebook you will be able to:
 | **4** | Connection to the real atmosphere | Error doubling time, 2nd-kind predictability |
 | **📝** | Guided questions | Synthesis and quantitative reasoning |
 
-> **Unit convention:** One *model time unit* (MTU) ≈ **5 days** in the real atmosphere.
+> **Unit convention.** One *model time unit* (MTU) is read as ≈ **5 days** of
+> atmospheric time throughout this chapter. Treat that as a loose convention rather
+> than a calibration: it is *not* derived by matching Lorenz 63 to the atmosphere, and
+> Section 4 shows exactly where the two part company.
 """)
     return
 
@@ -628,7 +631,7 @@ This is *sensitive dependence on initial conditions* (SDIC) — the butterfly ef
 ### How to read the log-separation plot
 
 - **Flat or slowly rising**: error growing, but sub-exponentially (very early phase).
-- **Straight line (exponential phase)**: error doubling every $\ln 2/\lambda \approx 0.8$ MTU — classic chaotic regime.
+- **Straight line (exponential phase)**: error doubling every $\ln 2/\lambda \approx 0.77$ MTU — classic chaotic regime.
 - **Levelling off at the red dashed line**: error saturated.  The two forecasts are now statistically
   independent — completely uncorrelated.  Forecast skill has dropped to zero.
 """)
@@ -1120,13 +1123,29 @@ with surprising fidelity.
 
 | Quantity | Lorenz 63 | Real atmosphere |
 |----------|-----------|----------------|
-| Leading Lyapunov exponent $\lambda$ | ≈ 0.9 MTU⁻¹ | ≈ 0.35 day⁻¹ |
-| Error doubling time $\ln 2 / \lambda$ | ≈ 0.8 MTU | ≈ 2 days |
+| Leading Lyapunov exponent $\lambda$ | ≈ 0.91 MTU⁻¹ | ≈ 0.35 day⁻¹ |
+| Lyapunov (e-folding) time $1/\lambda$ | ≈ 1.1 MTU | ≈ 2.9 days |
+| Error doubling time $\ln 2 / \lambda$ | ≈ 0.77 MTU | ≈ 2.0 days |
 | Predictability horizon (spread > 10 %) | ≈ 3–5 MTU | ≈ 1–2 weeks |
 | Full saturation | ≈ 6–9 MTU | ≈ 3–4 weeks |
 
-With 1 MTU ≈ 5 days, ECMWF achieves useful deterministic skill to about 10 days —
-roughly 2 MTU, or about 2.5 e-folding times.
+**The two columns are independent measurements, not conversions of each other** — and
+reading across the doubling-time row is where the 5-day convention breaks down. At
+5 days per MTU, Lorenz 63's 0.77 MTU is ≈ 3.8 days, against the atmosphere's ≈ 2.0.
+Equivalently, $\lambda \approx 0.91\ \mathrm{MTU^{-1}}$ becomes
+$0.18\ \mathrm{day^{-1}}$ — about **half** the atmosphere's 0.35. Under this convention
+the model is roughly half as chaotic per day as the system it stands in for.
+
+Calibrate the other way — pick the MTU so the *doubling times* agree — and you get
+1 MTU ≈ 2.6 days instead. Neither reading is wrong; they answer different questions,
+and no single conversion satisfies both. What transfers from this model to the
+atmosphere is the **law** — error grows exponentially, so predictability is bought
+logarithmically — not the constant in front of it.
+
+Taking the 5-day reading, ECMWF's ≈ 10 days of useful deterministic skill is roughly
+2 MTU: about **2.6 error-doubling times**, or 1.8 e-folding times. (Those two are easy
+to conflate. The Lyapunov time $1/\lambda$ is the e-folding time; the doubling time
+$\ln 2/\lambda$ is shorter by a factor of $\ln 2$.)
 
 ### The diminishing return of better observations
 
@@ -1267,10 +1286,13 @@ Fix lead time = 15 MTU and δ₀ = 10⁻⁴.  Compare N = 5 vs N = 50.
 
 **Q4 — Quantitative connection to the real atmosphere** *(Sections 2 & 4)*
 
-The error e-folding time in L63 is ≈ 0.8 MTU ≈ 4 days.
-ECMWF achieves useful skill to ≈ 10 days.
+In L63 the error **doubling** time is $\ln 2/\lambda_1 \approx 0.77$ MTU and the
+**e-folding** time is $1/\lambda_1 \approx 1.1$ MTU — do not use them
+interchangeably. ECMWF achieves useful skill to ≈ 10 days.
 
-- How many e-folding times is a 10-day forecast?
+- Taking 1 MTU ≈ 5 days, how many *doubling* times is a 10-day forecast? How many
+  *e-folding* times? (They differ by a factor of $\ln 2$; you should get ≈ 2.6 and
+  ≈ 1.8.)
 - If ECMWF could reduce analysis error by a factor of 100, how many extra days
   of deterministic predictability would that buy?  Use $\Delta t = \ln(100) / 0.35\;\text{day}^{-1}$.
 - Is this gain worth the cost of a factor-100 improvement in observations?
@@ -1294,7 +1316,7 @@ Watch the ensemble saturate — individual trajectories become completely uncorr
 *System: Lorenz (1963), σ = 10, ρ = 28, β = 8/3.*
 *Integration: RK45 (scipy), rtol = 10⁻⁹.*
 *Ensemble perturbations: iid Gaussian with seed = 42.*
-*1 MTU ≈ 5 days in the real atmosphere.*
+*Time unit: 1 MTU read as ≈ 5 days — a loose convention, not a calibration; see Section 4.*
 """)
     return
 
