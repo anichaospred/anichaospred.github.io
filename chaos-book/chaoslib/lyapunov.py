@@ -170,15 +170,21 @@ def finite_time_exponents(
     :math:`\lambda_1` describes the attractor, not today's forecast.
     """
     states = np.atleast_2d(np.asarray(states, dtype=float))
+    if tau <= 0.0:
+        raise ValueError("tau must be positive: a zero window has no growth rate")
     n_steps = max(1, int(round(tau / dt)))
+    # Exactly tau, even when tau is not an integer multiple of dt -- otherwise
+    # the exponent is normalised by a different interval from the one
+    # propagated. See the note in chaoslib.adjoint.tangent_linear_propagator.
+    step = tau / n_steps
     out = np.empty(states.shape[0])
 
     for i, x0 in enumerate(states):
         x = x0.copy()
         m = np.eye(x.size)
         for _ in range(n_steps):
-            x, m = _rk4_step_with_tangent(rhs, jacobian, x, m, dt, **params)
-        out[i] = np.log(np.linalg.svd(m, compute_uv=False)[0]) / (n_steps * dt)
+            x, m = _rk4_step_with_tangent(rhs, jacobian, x, m, step, **params)
+        out[i] = np.log(np.linalg.svd(m, compute_uv=False)[0]) / tau
     return out
 
 

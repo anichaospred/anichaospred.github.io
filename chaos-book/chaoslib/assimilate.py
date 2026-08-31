@@ -151,9 +151,16 @@ def four_dvar_analysis(
         grad = b_inv @ departure
 
         for t_obs, y_obs in prepared:
-            n_steps = max(1, int(round(t_obs / dt)))
-            grid = np.arange(n_steps + 1) * dt
-            x_at_obs = rk4(rhs, x0, grid, **params)[-1]
+            if t_obs <= 0.0:
+                # Observation at the window start: no propagation, and the
+                # propagator below is the identity.
+                x_at_obs = x0
+            else:
+                n_steps = max(1, int(round(t_obs / dt)))
+                # linspace, not arange*dt: the trajectory must end exactly at
+                # t_obs so that it matches the tangent-linear propagator.
+                grid = np.linspace(0.0, t_obs, n_steps + 1)
+                x_at_obs = rk4(rhs, x0, grid, **params)[-1]
             innovation = y_obs - h_op @ x_at_obs
             weighted = r_inv @ innovation
             cost += 0.5 * float(innovation @ weighted)

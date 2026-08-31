@@ -23,6 +23,9 @@ __all__ = [
     "C_FIXED",
     "C_SAT",
     "C_START",
+    "C_OBS",
+    "C_BG",
+    "C_ANALYSIS",
     "SCENE_BG",
     "FONT",
     "TIME_SCALE",
@@ -39,6 +42,14 @@ C_MEAN = "#0f766e"  # teal      -- ensemble mean
 C_FIXED = "#f59e0b"  # amber     -- fixed points
 C_SAT = "#b91c1c"  # firebrick -- saturation level
 C_START = "#10b981"  # emerald   -- start marker
+
+# Data assimilation adds three roles. They are distinguished from the forecast
+# colours above because a DA figure routinely shows all six at once, and the
+# reader has to be able to tell an observation from a perturbed forecast at a
+# glance.
+C_OBS = "#ea580c"  # orange    -- observations (noisy, discrete)
+C_BG = "#64748b"  # slate     -- background / free forecast (the thing DA improves on)
+C_ANALYSIS = "#0891b2"  # cyan      -- analysis (the DA estimate)
 SCENE_BG = "rgba(250,249,255,0.92)"
 FONT = "Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif"
 TIME_SCALE = "Plasma"  # colour = time along a trajectory

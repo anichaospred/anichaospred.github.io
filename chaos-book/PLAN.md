@@ -156,11 +156,12 @@ start and no link is dead.
     and inflation; hybrid methods. *Notebook:* EnKF on L96 with localisation radius
     and inflation as sliders, and the filter-divergence cliff. *Knob:* ensemble size,
     localisation.
-20. **Data assimilation in practice** — Cycling DA; analysis error as the floor on
-    forecast error; the logarithmic return on better observations,
-    $\Delta t = \ln 10/\lambda \approx 6.5$ days per decade of error reduction.
-    *Reuse:* the existing `da_l63_tutorial.py` (3DVAR/4DVAR/EnKF on the same system).
-    *Knob:* observation density and error.
+20. ★ **Data assimilation in practice** — Cycling 3D-Var, 4D-Var and the EnKF on
+    Lorenz 63; analysis error as the floor on forecast error; and the logarithmic
+    return on better observations, $\Delta t = \ln 10/\lambda$ — measured directly,
+    and agreeing with $1/\lambda_1$ from chapter 7 to a few percent by an entirely
+    independent route. *Knob:* ensemble size, inflation, observation interval,
+    $\delta_0$.
 21. **Model error and the imperfect-model problem** — Stochastic parameterisation;
     model-error growth vs. initial-condition error growth; the imperfect-model
     scenario. *Notebook:* forecast L96 with a wrong $F$ and separate the two error
@@ -268,17 +269,28 @@ Pyodide build every reader's browser receives.
 
 | | Count |
 |---|---|
-| Chapters live | **2** (4, 6) |
-| Chapters stubbed | 29 |
+| Chapters live | **3** (4, 6, 20) |
+| Chapters stubbed | 28 |
 | `chaoslib` modules | 10 |
-| `chaoslib` tests | 90, all passing |
+| `chaoslib` tests | 100, all passing |
 
 **Next chapters, in priority order** — each already has most of its material in hand:
 
-1. **Ch. 20** (DA in practice) — port `da_l63_tutorial.py` from `aneeshcs.github.io`.
-2. **Ch. 7** (Lyapunov exponents) — `chaoslib.lyapunov` is complete and tested; the
+1. **Ch. 7** (Lyapunov exponents) — `chaoslib.lyapunov` is complete and tested; the
    chapter is mostly exposition plus a spectrum figure.
+2. **Ch. 15** (tangent linear and adjoint) — `chaoslib.adjoint` is complete and
+   tested, including the finite-difference validation curve the chapter is built on,
+   and chapter 20 already depends on it conceptually.
 3. **Ch. 5** (maps and bifurcations) — small, self-contained, no new library code.
-4. **Ch. 15** (tangent linear and adjoint) — `chaoslib.adjoint` is complete and
-   tested, including the finite-difference validation curve the chapter is built on.
-5. **Ch. 11** (Lorenz 96) — `chaoslib.systems.lorenz96` and the spectrum are tested.
+4. **Ch. 11** (Lorenz 96) — `chaoslib.systems.lorenz96` and the spectrum are tested.
+5. **Ch. 18/19** (variational and ensemble DA) — chapter 20 currently carries their
+   theory sections; see the note below.
+
+### A second decision on record: splitting chapter 20
+
+Chapter 20 covers 3D-Var, 4D-Var *and* the EnKF, which properly belong to chapters 18,
+19 and 20 respectively. It is kept whole for the same reason chapter 6 is: it is a
+coherent, tested teaching artefact, and breaking it up before its neighbours exist
+would leave gaps. As chapters 18 and 19 are written they should take the corresponding
+theory sections, and chapter 20 should shrink to cycling, analysis error and the
+logarithmic return — which is its real subject.

@@ -114,7 +114,14 @@ components).
 ## `plotting` — the book's figure design system
 
 Semantic colours (`C_TRUTH`, `C_PERT`, `C_SPREAD`, `C_MEAN`, `C_FIXED`, `C_SAT`,
-`C_START`, `C_CONTEXT`), `TIME_SCALE` for colour-as-time, and `style2d` / `style3d`.
+`C_START`, `C_CONTEXT`), plus three for data assimilation — `C_OBS` (observations),
+`C_BG` (background / free forecast) and `C_ANALYSIS` (the DA estimate) — `TIME_SCALE`
+for colour-as-time, and `style2d` / `style3d`.
+
+The palette is tested for pairwise perceptual separation, because a DA figure shows six
+of these at once. One documented exception is allowed (`C_PERT` and `C_SAT`, separated
+by line style rather than hue); everything else must clear a minimum RGB distance, so a
+new colour cannot be added as a shade of an existing one.
 
 Each colour means one thing across every chapter. Import them; do not choose colours
 per figure.
