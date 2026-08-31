@@ -1,0 +1,12 @@
+{{- /* Lazy-load a marimo WASM notebook: Pyodide only boots when the reader clicks. */ -}}
+{{- /* Trim the leading slash so relURL prepends the baseURL path, keeping content
+       baseURL-agnostic even though this book is served from the domain root. */ -}}
+{{- $src := .Get "src" | strings.TrimPrefix "/" | relURL -}}
+<div class="marimo-embed">
+  <button data-src="{{ $src }}"
+    onclick="var f=document.createElement('iframe');f.src=this.dataset.src;f.allow='fullscreen';this.parentNode.replaceChild(f,this);">
+    ▶ Load the interactive notebook
+    <small>runs Python in your browser — nothing to install; first load fetches ~10&nbsp;MB</small>
+  </button>
+  <noscript><a href="{{ $src }}">Open the notebook</a> (requires JavaScript).</noscript>
+</div>

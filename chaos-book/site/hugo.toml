@@ -1,0 +1,28 @@
+baseURL = "https://anichaospred.github.io/"
+title = "An Interactive Chaos and Predictability Textbook"
+disableKinds = ["taxonomy", "term", "rss", "sitemap"]
+
+# LaTeX rendered server-side to MathML (transform.ToMath via the passthrough
+# render hook). No maths JavaScript ships, and a malformed equation fails the
+# build instead of reaching the reader as raw TeX.
+[markup.goldmark.extensions.passthrough]
+enable = true
+[markup.goldmark.extensions.passthrough.delimiters]
+block = [["$$", "$$"], ["\\[", "\\]"]]
+inline = [["$", "$"], ["\\(", "\\)"]]
+
+[markup.goldmark.renderer]
+unsafe = true   # chapter pages use small inline HTML blocks (metadata strips)
+
+# The canonical notation page is the repo-root NOTATION.md, mounted into content.
+# NOTE: declaring any mount disables Hugo's defaults, so content and static must
+# be re-declared explicitly below.
+[[module.mounts]]
+source = "content"
+target = "content"
+[[module.mounts]]
+source = "../NOTATION.md"
+target = "content/notation.md"
+[[module.mounts]]
+source = "static"
+target = "static"

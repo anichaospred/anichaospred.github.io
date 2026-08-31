@@ -1,0 +1,13 @@
+{{ define "main" }}
+<h1>{{ .Title }}</h1>
+{{ with .Description }}<p class="part-desc">{{ . }}</p>{{ end }}
+{{ .Content }}
+<ul class="chapter-list">
+{{ range .Pages.ByWeight }}
+  <li>
+    <span class="dot{{ if ne .Params.status "live" }} dot-planned{{ end }}">●</span>
+    <a href="{{ .RelPermalink }}">{{ .Title }}</a>
+  </li>
+{{ end }}
+</ul>
+{{ end }}

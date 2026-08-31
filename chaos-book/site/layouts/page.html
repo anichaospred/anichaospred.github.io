@@ -1,0 +1,25 @@
+{{ define "main" }}
+<h1>{{ .Title }}</h1>
+{{ if or .Params.part .Params.lectures .Params.knob .Params.status }}
+<div class="chapter-meta">
+  {{ with .Params.part }}<span><strong>{{ . }}</strong></span>{{ end }}
+  {{ with .Params.lectures }}<span>ATOC 4500/5500: <strong>{{ . }}</strong></span>{{ end }}
+  {{ with .Params.knob }}<span>Knob: <strong>{{ . }}</strong></span>{{ end }}
+  {{ with .Params.status }}
+    <span class="status-pill {{ if eq . "live" }}status-live{{ else }}status-planned{{ end }}">
+      {{ if eq . "live" }}live notebook{{ else }}planned{{ end }}
+    </span>
+  {{ end }}
+</div>
+{{ end }}
+{{ .Content }}
+{{ if eq .Params.status "planned" }}
+<div class="planned-note">
+  <strong>This chapter is planned, not yet written.</strong>
+  The overview and knob above record what it will cover, so the shape of the book is
+  visible before every chapter exists. See
+  <a href="https://github.com/anichaospred/anichaospred.github.io/blob/main/chaos-book/PLAN.md">PLAN.md</a>
+  for the full outline and the order chapters are being written in.
+</div>
+{{ end }}
+{{ end }}

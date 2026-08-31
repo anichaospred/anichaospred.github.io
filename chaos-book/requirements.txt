@@ -1,0 +1,15 @@
+# Authoring-side pins for the first edition.
+#
+# marimo's own version fully determines the Pyodide runtime that every
+# `marimo export html-wasm` bundles (see PYODIDE_VERSION in
+# marimo/_pyodide/pyodide_constraints.py), so pinning marimo here is what pins
+# the *reader's* in-browser environment, not just ours.
+marimo==0.23.9        # -> bundles Pyodide 0.27.7 (CPython 3.12.7)
+
+# These pin the AUTHORING environment only (pytest, local `marimo edit`).
+# The notebooks' PEP 723 headers deliberately leave numpy/scipy/plotly
+# unpinned -- see docs/architecture.md, "Why the runtime deps float".
+numpy==2.4.4
+scipy==1.17.1
+plotly==6.5.0
+pytest==9.0.3

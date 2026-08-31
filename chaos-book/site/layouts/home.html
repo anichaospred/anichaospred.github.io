@@ -1,0 +1,51 @@
+{{ define "main" }}
+{{ $first := "" }}
+{{ range site.Sections.ByWeight }}
+  {{ range .Pages.ByWeight }}
+    {{ if and (eq $first "") (eq .Params.status "live") }}{{ $first = .RelPermalink }}{{ end }}
+  {{ end }}
+{{ end }}
+<section class="hero">
+  <div class="hero-motif">
+    <img src="{{ "media/hero-chaos.jpg" | relURL }}"
+         alt="A swirling, turbulent night sky in thick brushstrokes — a painterly stand-in for deterministic chaos">
+  </div>
+  <p class="hero-motif-caption">Deterministic, and still unpredictable</p>
+  <div class="hero-text">
+    <h1>{{ site.Title }}</h1>
+    {{ .Content }}
+    <div class="cta-row">
+      {{ with $first }}<a class="btn btn-primary" href="{{ . }}">Start reading →</a>{{ end }}
+      <a class="btn btn-secondary" href="{{ "how-to-run" | relURL }}/">How these notebooks work</a>
+      <a class="btn btn-secondary" href="{{ "course" | relURL }}/">ATOC 4500/5500 mapping</a>
+    </div>
+  </div>
+</section>
+
+<section class="part-grid">
+  {{ range site.Sections.ByWeight }}
+  <article class="part-card">
+    <h2>
+      <a href="{{ .RelPermalink }}">{{ .Title }}</a>
+      {{ if .Params.optional }}<span class="badge">optional</span>{{ end }}
+    </h2>
+    <p class="part-desc">{{ .Description }}</p>
+    <ul class="chapter-list">
+      {{ range .Pages.ByWeight }}
+      <li>
+        <span class="dot{{ if ne .Params.status "live" }} dot-planned{{ end }}"
+              title="{{ if eq .Params.status "live" }}live{{ else }}planned{{ end }}">●</span>
+        <a href="{{ .RelPermalink }}">{{ .Title }}</a>
+      </li>
+      {{ end }}
+    </ul>
+  </article>
+  {{ end }}
+</section>
+
+<p class="map-link">
+  A filled dot marks a chapter with a live interactive notebook; a hollow one marks a
+  chapter that is planned and shows its abstract and knob.
+  <a href="{{ "dependencies" | relURL }}/">What the notebooks depend on →</a>
+</p>
+{{ end }}

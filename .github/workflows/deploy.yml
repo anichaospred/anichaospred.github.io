@@ -1,0 +1,94 @@
+name: Test, export notebooks, deploy to Pages
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Never let two deploys race; queue instead of cancelling, so a merged PR always
+# reaches the live site.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+defaults:
+  run:
+    working-directory: chaos-book
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: chaos-book/requirements.txt
+
+      - name: Install pinned dependencies
+        run: pip install -r requirements.txt
+
+      # uv is what `marimo export --sandbox` shells out to in order to build each
+      # notebook's environment from its PEP 723 header.
+      - uses: astral-sh/setup-uv@v6
+
+      # HARD GATE: chaoslib correctness. Nothing ships if the numerics are wrong.
+      - name: Run chaoslib tests
+        run: make test
+
+      # `make notebooks` cleans first, exports every chapter into ONE shared
+      # directory, strips marimo's stray CLAUDE.md, and injects the
+      # chunk-load-error auto-reload handler. It fails the build on any export
+      # error, so it doubles as an integration test of every notebook.
+      - name: Export notebooks to WASM
+        run: make notebooks
+
+      - name: Fail if an export produced no output
+        run: |
+          test -d site/static/nb/assets || { echo "shared assets/ missing"; exit 1; }
+          test -f site/static/nb/public/chaoslib-0.1.0-py3-none-any.whl \
+            || { echo "chaoslib wheel did not reach the export"; exit 1; }
+          for nb in notebooks/ch*.py; do
+            name=$(basename "$nb" .py)
+            test -f "site/static/nb/$name.html" \
+              || { echo "missing export for $name"; exit 1; }
+          done
+          echo "exports present: $(ls site/static/nb/ch*.html | wc -l) chapters, \
+            $(ls site/static/nb/assets | wc -l) shared asset files"
+
+      - uses: peaceiris/actions-hugo@v3
+        with:
+          hugo-version: "0.165.0"
+          extended: true
+
+      - uses: actions/configure-pages@v5
+        id: pages
+
+      # baseURL lives in hugo.toml and needs no override: this repo is
+      # <org>.github.io, so Pages serves it at the domain root.
+      - name: Build the site
+        run: hugo --minify --source site
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: chaos-book/site/public
+
+  deploy:
+    # Only publish from main; a PR gets the tests and the export check, not a deploy.
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
