@@ -7,7 +7,7 @@ NOTEBOOKS := $(wildcard $(NB_DIR)/ch*.py)
 # (notebooks micropip-install it when running under Pyodide).
 WHEEL     := $(NB_DIR)/public/chaoslib-0.1.0-py3-none-any.whl
 
-.PHONY: notebooks nb-one wheel serve test clean
+.PHONY: notebooks nb-one ipynb wheel serve test clean
 
 wheel: $(WHEEL)
 $(WHEEL): chaoslib/*.py pyproject.toml
@@ -30,7 +30,19 @@ notebooks: clean $(WHEEL)
 	done
 	@rm -f $(OUT_DIR)/CLAUDE.md
 	@python3 scripts/patch_chunk_reload.py $(OUT_DIR)/*.html
+	@$(MAKE) --no-print-directory ipynb
 	@echo "done -> $(OUT_DIR)"
+
+# Downloadable Jupyter versions, linked from each chapter page. These are marimo's
+# own `export ipynb` plus a dependency cell and a header -- see scripts/export_ipynb.py.
+# Cheap (no execution), so it runs as part of `notebooks`.
+IPYNB_DIR := $(SITE_DIR)/static/ipynb
+
+ipynb:
+	@mkdir -p $(IPYNB_DIR)
+	@python3 scripts/export_ipynb.py $(NOTEBOOKS) \
+		--outdir $(IPYNB_DIR) --site-root $(SITE_DIR) \
+		--base-url https://anichaospred.github.io
 
 # Iterate on one chapter without a full re-export:  make nb-one NB=ch06_lorenz63
 nb-one: $(WHEEL)
@@ -47,4 +59,4 @@ test:
 	pytest -q tests/
 
 clean:
-	rm -rf $(OUT_DIR)
+	rm -rf $(OUT_DIR) $(IPYNB_DIR)
