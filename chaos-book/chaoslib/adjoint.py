@@ -66,9 +66,21 @@ def tangent_linear_propagator(
     """
     x = np.asarray(x0, dtype=float).ravel()
     m = np.eye(x.size)
+    if tau <= 0.0:
+        # A zero-length window propagates nothing: the propagator is the
+        # identity. Forcing a step here (the obvious `max(1, ...)`) silently
+        # advances the tangent by one dt and corrupts every gradient that
+        # includes an observation at the window start -- which, in cycling
+        # 4D-Var, is the normal case.
+        return m
     n_steps = max(1, int(round(tau / dt)))
+    # Step with tau/n_steps rather than dt, so the propagator covers EXACTLY
+    # tau even when tau is not an integer multiple of dt. Using dt directly
+    # makes M correspond to n_steps*dt, a different interval from the one the
+    # nonlinear model was integrated over.
+    step = tau / n_steps
     for _ in range(n_steps):
-        x, m = _rk4_step_with_tangent(rhs, jacobian, x, m, dt, **params)
+        x, m = _rk4_step_with_tangent(rhs, jacobian, x, m, step, **params)
     return m
 
 

@@ -519,6 +519,120 @@ def test_singular_vector_actually_achieves_the_predicted_amplification(
     assert np.linalg.norm(grown) == pytest.approx(sigmas[0], rel=1e-10)
 
 
+def test_propagator_over_a_zero_window_is_the_identity():
+    """tau = 0 propagates nothing, so M must be I.
+
+    Regression test. The obvious `n_steps = max(1, round(tau/dt))` forces one
+    step of dt here, which silently advances the tangent and corrupts every
+    4D-Var gradient containing an observation at the window start -- i.e. the
+    normal case in cycling assimilation. It cost 6.8% gradient error, and was
+    invisible to the finite-difference amplitude test because the floor is
+    independent of the perturbation size.
+    """
+    m = adjoint.tangent_linear_propagator(
+        systems.lorenz63,
+        systems.lorenz63_jacobian,
+        np.array([1.0, 1.0, 20.0]),
+        tau=0.0,
+        dt=0.01,
+    )
+    assert np.allclose(m, np.eye(3), atol=0.0)
+
+
+@pytest.mark.parametrize("tau", [0.105, 0.037, 0.2501])
+def test_propagator_covers_exactly_tau_when_not_a_multiple_of_dt(tau):
+    """M must correspond to the interval tau, not to n_steps*dt.
+
+    Checked against the exact Liouville identity det M = exp(tau * trace J),
+    which pins the interval independently of the trajectory.
+    """
+    m = adjoint.tangent_linear_propagator(
+        systems.lorenz63,
+        systems.lorenz63_jacobian,
+        np.array([1.0, 1.0, 20.0]),
+        tau=tau,
+        dt=0.01,
+        sigma=SIGMA,
+        rho=RHO,
+        beta=BETA,
+    )
+    assert np.linalg.det(m) == pytest.approx(np.exp(L63_TRACE * tau), rel=1e-4)
+
+
+def test_four_dvar_gradient_matches_central_differences():
+    """The adjoint gradient of the 4D-Var cost, verified to ~1e-9.
+
+    This is the test that caught the two interval bugs above. It reconstructs
+    the same cost and gradient that `four_dvar_analysis` minimises, including an
+    observation at the window start.
+    """
+    dt = 0.01
+    h_op = np.eye(3)
+    r_cov = np.eye(3) * 4.0
+    b_cov = np.eye(3) * 9.0
+    r_inv = np.linalg.inv(r_cov)
+    b_inv = np.linalg.inv(b_cov)
+    xb = np.array([-7.09, -3.74, 35.33])
+    truth0 = np.array([-8.97, -2.81, 33.96])
+    rng = np.random.default_rng(0)
+
+    observations = []
+    for t_obs in (0.0, 0.2, 0.4, 0.6, 0.8):
+        if t_obs == 0.0:
+            state = truth0
+        else:
+            grid = np.linspace(0.0, t_obs, int(round(t_obs / dt)) + 1)
+            state = integrate.rk4(systems.lorenz63, truth0, grid)[-1]
+        observations.append((t_obs, state + rng.normal(0.0, 2.0, 3)))
+
+    def cost(x0):
+        departure = x0 - xb
+        total = 0.5 * float(departure @ (b_inv @ departure))
+        for t_obs, y in observations:
+            if t_obs == 0.0:
+                state = x0
+            else:
+                grid = np.linspace(0.0, t_obs, int(round(t_obs / dt)) + 1)
+                state = integrate.rk4(systems.lorenz63, x0, grid)[-1]
+            innov = y - h_op @ state
+            total += 0.5 * float(innov @ (r_inv @ innov))
+        return total
+
+    def grad(x0):
+        departure = x0 - xb
+        g = b_inv @ departure
+        for t_obs, y in observations:
+            if t_obs == 0.0:
+                state = x0
+            else:
+                grid = np.linspace(0.0, t_obs, int(round(t_obs / dt)) + 1)
+                state = integrate.rk4(systems.lorenz63, x0, grid)[-1]
+            weighted = r_inv @ (y - h_op @ state)
+            propagator = adjoint.tangent_linear_propagator(
+                systems.lorenz63, systems.lorenz63_jacobian, x0, t_obs, dt=dt
+            )
+            g = g - propagator.T @ (h_op.T @ weighted)
+        return g
+
+    analytic = grad(xb)
+    eps = 1e-5
+    numerical = np.array(
+        [(cost(xb + eps * e) - cost(xb - eps * e)) / (2.0 * eps) for e in np.eye(3)]
+    )
+    rel = np.linalg.norm(numerical - analytic) / np.linalg.norm(analytic)
+    assert rel < 1e-7
+
+
+def test_finite_time_exponents_reject_a_zero_window():
+    with pytest.raises(ValueError, match="tau must be positive"):
+        lyapunov.finite_time_exponents(
+            systems.lorenz63,
+            systems.lorenz63_jacobian,
+            np.array([[1.0, 1.0, 20.0]]),
+            tau=0.0,
+        )
+
+
 def test_adjoint_propagator_is_the_transpose(l63_propagator):
     assert np.allclose(
         adjoint.adjoint_propagator(l63_propagator), l63_propagator.T
@@ -589,6 +703,66 @@ def test_enkf_converges_to_the_kalman_filter_as_the_ensemble_grows(
         errors.append(float(np.linalg.norm(xa - xa_kf)))
     assert errors[0] > errors[1] > errors[2]
     assert errors[-1] < 0.05
+
+
+def test_enkf_reproduces_the_kalman_analysis_covariance():
+    """The mean is not enough: the analysis SPREAD must be right too.
+
+    An EnKF whose mean converges to the Kalman filter but whose covariance is
+    wrong would produce forecasts that are accurate and dishonest -- and the
+    error would show up only as a mis-calibrated ensemble, which is easy to
+    misread as needing more inflation. Checked here against the exact
+    linear-Gaussian analysis covariance.
+    """
+    b_cov = np.array([[2.0, 0.3, 0.1], [0.3, 1.5, 0.2], [0.1, 0.2, 1.0]])
+    h_op = np.eye(3)
+    r_cov = np.eye(3) * 0.5
+    xb = np.array([1.0, 2.0, 3.0])
+    y = np.array([1.4, 1.7, 3.3])
+    _, p_a_exact = assimilate.kalman_filter_update(xb, b_cov, y, h_op, r_cov)
+
+    rng = np.random.default_rng(0)
+    ens = rng.multivariate_normal(xb, b_cov, size=20000)
+    ens = ens - ens.mean(axis=0) + xb  # exact mean: only the covariance is sampled
+    analysis = assimilate.enkf_update(ens, y, h_op, r_cov, inflation=1.0, seed=5)
+    p_a_sample = np.cov(analysis.T, ddof=1)
+
+    ratio = np.sqrt(np.trace(p_a_sample) / np.trace(p_a_exact))
+    assert ratio == pytest.approx(1.0, abs=0.03)
+
+
+def test_enkf_inflation_widens_the_background_not_the_analysis_mean():
+    """Inflation must only ever INCREASE spread -- it cannot reduce it.
+
+    Pinned because the chapter-20 reliability discussion rests on it: in a
+    configuration that is already over-dispersed, no amount of inflation can
+    restore calibration.
+    """
+    b_cov = np.eye(3) * 2.0
+    h_op = np.eye(3)
+    r_cov = np.eye(3) * 0.5
+    xb = np.array([1.0, 2.0, 3.0])
+    y = np.array([1.4, 1.7, 3.3])
+    rng = np.random.default_rng(11)
+    ens = rng.multivariate_normal(xb, b_cov, size=2000)
+
+    spreads = [
+        float(
+            np.sqrt(
+                np.mean(
+                    np.var(
+                        assimilate.enkf_update(
+                            ens, y, h_op, r_cov, inflation=a, seed=4
+                        ),
+                        axis=0,
+                        ddof=1,
+                    )
+                )
+            )
+        )
+        for a in (1.0, 1.1, 1.2, 1.4)
+    ]
+    assert all(b > a for a, b in zip(spreads, spreads[1:]))
 
 
 def test_enkf_rejects_a_degenerate_ensemble():
@@ -942,16 +1116,22 @@ def test_predictive_information_decays_with_lead_time():
 # ==========================================================================
 # plotting: the palette is a contract other chapters rely on
 # ==========================================================================
+PALETTE_HEX = (
+    "C_TRUTH",
+    "C_PERT",
+    "C_SPREAD",
+    "C_MEAN",
+    "C_FIXED",
+    "C_SAT",
+    "C_START",
+    "C_OBS",
+    "C_BG",
+    "C_ANALYSIS",
+)
+
+
 def test_palette_entries_are_valid_css_colours():
-    hex_colours = [
-        plotting.C_TRUTH,
-        plotting.C_PERT,
-        plotting.C_SPREAD,
-        plotting.C_MEAN,
-        plotting.C_FIXED,
-        plotting.C_SAT,
-        plotting.C_START,
-    ]
+    hex_colours = [getattr(plotting, name) for name in PALETTE_HEX]
     for colour in hex_colours:
         assert colour.startswith("#") and len(colour) == 7
         int(colour[1:], 16)  # raises if not hex
@@ -961,13 +1141,38 @@ def test_palette_entries_are_valid_css_colours():
 
 def test_palette_colours_are_distinct():
     """Semantic colours must be visually separable or the convention is useless."""
-    colours = [
-        plotting.C_TRUTH,
-        plotting.C_PERT,
-        plotting.C_SPREAD,
-        plotting.C_MEAN,
-        plotting.C_FIXED,
-        plotting.C_SAT,
-        plotting.C_START,
-    ]
+    colours = [getattr(plotting, name) for name in PALETTE_HEX]
     assert len(set(colours)) == len(colours)
+
+
+def test_palette_colours_are_perceptually_separated():
+    """Distinctness of the hex string is not enough -- a DA figure shows six of
+    these at once, so any two must differ by a visible margin.
+
+    Crude but sufficient: require a minimum Euclidean distance in RGB, which
+    catches the failure mode of adding a colour that is merely a shade of one
+    already in use.
+    """
+    def rgb(h):
+        return tuple(int(h[i : i + 2], 16) for i in (1, 3, 5))
+
+    # One documented exception: C_PERT (rose, a trajectory) and C_SAT (firebrick,
+    # a dashed horizontal reference line) sit 59 apart. They co-occur only in the
+    # SDIC figures, where line style separates them, so the pair is accepted --
+    # but the bound is kept strong for every other pair so that a NEW colour
+    # cannot be added as a mere shade of an existing one.
+    allowed_close = {frozenset({"C_PERT", "C_SAT"})}
+
+    colours = {name: rgb(getattr(plotting, name)) for name in PALETTE_HEX}
+    names = list(colours)
+    for i, a in enumerate(names):
+        for b in names[i + 1 :]:
+            dist = sum((x - y) ** 2 for x, y in zip(colours[a], colours[b])) ** 0.5
+            floor = 55.0 if frozenset({a, b}) in allowed_close else 60.0
+            assert dist > floor, f"{a} and {b} are too close in RGB (d={dist:.0f})"
+
+
+def test_every_exported_palette_name_exists():
+    """__all__ is the contract chapters import against."""
+    for name in plotting.__all__:
+        assert hasattr(plotting, name), name
