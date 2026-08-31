@@ -71,6 +71,14 @@ For the record, the values the library reproduces: $\lambda_1 = 0.9056$,
 $\sum_i\lambda_i = -13.6667$, and a Kaplan–Yorke dimension of $2.06$ — the attractor is
 more than a surface and less than a volume.
 
+### A note on the figures
+
+Phase space is drawn as **static 2-D projections** — $x$–$z$, $x$–$y$, and $x(t)$ —
+rather than a rotatable 3-D scene. The $x$–$z$ projection is the image everyone
+recognises as the butterfly; it is the same every time; and it does not ask the reader
+to drag the plot into a usable viewpoint before they can see the two lobes. The
+parameters remain fully interactive: every slider still redraws the figure.
+
 {{< marimo src="/nb/ch06_lorenz63.html" >}}
 
 ## Exercises
