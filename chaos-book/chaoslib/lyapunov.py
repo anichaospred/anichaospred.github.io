@@ -30,6 +30,7 @@ Jacobian = Callable[..., Array]
 
 __all__ = [
     "lyapunov_spectrum",
+    "lyapunov_convergence",
     "finite_time_exponents",
     "twin_trajectory_growth",
     "fit_growth_rate",
@@ -97,6 +98,63 @@ def lyapunov_spectrum(
         totals += np.log(diag)
 
     return totals / (n_steps * dt)
+
+
+def lyapunov_convergence(
+    rhs: RHS,
+    jacobian: Jacobian,
+    x0: Array,
+    dt: float = 0.01,
+    t_final: float = 200.0,
+    t_transient: float = 20.0,
+    n_samples: int = 200,
+    n_exponents: int | None = None,
+    **params: float,
+) -> tuple[Array, Array]:
+    r"""The Benettin running estimate, sampled as it converges.
+
+    Same computation as :func:`lyapunov_spectrum` -- one pass, no extra cost --
+    but returning the partial time-averages instead of only the final value:
+
+    .. math::
+        \lambda_i(T) = rac{1}{T}\sum_{n \le T/\Delta t} \ln |R_{ii}^{(n)}|
+
+    Returns ``(times, estimates)`` with ``estimates`` of shape
+    ``(n_samples, k)``.
+
+    This exists because the *rate* of convergence is itself the lesson. The
+    exponents are defined as a $T 	o \infty$ limit, and the curve shows how long
+    "long enough" actually is -- the leading exponent is still drifting in the
+    third decimal at T = 400. It also explains why a single twin-trajectory fit
+    (chapter 6) scatters so widely: that is this curve evaluated at T of order 10.
+    """
+    x = np.asarray(x0, dtype=float).ravel()
+    n = x.size
+    k = n if n_exponents is None else int(n_exponents)
+
+    if t_transient > 0.0:
+        n_tr = max(1, int(round(t_transient / dt)))
+        for _ in range(n_tr):
+            x = rk4(rhs, x, np.array([0.0, dt]), **params)[-1]
+
+    q = np.eye(n)[:, :k]
+    totals = np.zeros(k)
+    n_steps = max(1, int(round(t_final / dt)))
+    stride = max(1, n_steps // int(n_samples))
+
+    times, estimates = [], []
+    for step in range(1, n_steps + 1):
+        x, q = _rk4_step_with_tangent(rhs, jacobian, x, q, dt, **params)
+        q, r = np.linalg.qr(q)
+        diag = np.abs(np.diag(r))
+        diag = np.where(diag > 0.0, diag, np.finfo(float).tiny)
+        totals += np.log(diag)
+        if step % stride == 0:
+            elapsed = step * dt
+            times.append(elapsed)
+            estimates.append(totals / elapsed)
+
+    return np.asarray(times), np.asarray(estimates)
 
 
 def _rk4_step_with_tangent(

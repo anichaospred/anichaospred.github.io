@@ -283,6 +283,85 @@ def test_ks_entropy_is_the_sum_of_positive_exponents(l63_spectrum):
     assert lyapunov.ks_entropy(np.array([-1.0, -2.0])) == 0.0
 
 
+def test_lyapunov_convergence_shapes_and_time_grid():
+    times, estimates = lyapunov.lyapunov_convergence(
+        systems.lorenz63,
+        systems.lorenz63_jacobian,
+        np.array([1.0, 1.0, 20.0]),
+        dt=0.01,
+        t_final=50.0,
+        t_transient=10.0,
+        n_samples=40,
+    )
+    assert estimates.shape[1] == 3
+    assert times.size == estimates.shape[0]
+    assert np.all(np.diff(times) > 0)
+    assert times[-1] == pytest.approx(50.0, abs=0.05)
+
+
+def test_lyapunov_convergence_endpoint_obeys_the_trace_identity():
+    """The running estimate must satisfy sum = trace(J) at its end.
+
+    This is the right invariant to assert, and the only one that is exact. The
+    endpoint does NOT reproduce a separate `lyapunov_spectrum` call to better than
+    a few hundredths, and that is not a defect: both runs are chaotic, so
+    floating-point divergence decorrelates them long before T = 200, and the
+    leading exponent scatters by ~0.03 across nearby transients at that length.
+    The trace identity holds for either run at any T.
+    """
+    _, estimates = lyapunov.lyapunov_convergence(
+        systems.lorenz63,
+        systems.lorenz63_jacobian,
+        np.array([1.0, 1.0, 20.0]),
+        dt=0.01,
+        t_final=150.0,
+        t_transient=20.0,
+        n_samples=50,
+        sigma=SIGMA,
+        rho=RHO,
+        beta=BETA,
+    )
+    assert estimates[-1].sum() == pytest.approx(L63_TRACE, abs=1e-3)
+    assert estimates[-1][0] == pytest.approx(0.9056, abs=0.06)
+
+
+def test_lyapunov_convergence_settles_down():
+    """The running estimate must wander less late than early.
+
+    Compared as the spread of the leading estimate over the last half of the
+    record against the first half -- the defining behaviour of a time average,
+    and the reason the chapter plots this curve rather than quoting one number.
+    """
+    _, estimates = lyapunov.lyapunov_convergence(
+        systems.lorenz63,
+        systems.lorenz63_jacobian,
+        np.array([1.0, 1.0, 20.0]),
+        dt=0.01,
+        t_final=300.0,
+        t_transient=20.0,
+        n_samples=120,
+    )
+    leading = estimates[:, 0]
+    early = leading[: len(leading) // 2]
+    late = leading[len(leading) // 2 :]
+    assert late.std() < early.std()
+
+
+def test_lyapunov_convergence_can_track_the_leading_exponent_alone():
+    _, estimates = lyapunov.lyapunov_convergence(
+        systems.lorenz63,
+        systems.lorenz63_jacobian,
+        np.array([1.0, 1.0, 20.0]),
+        dt=0.01,
+        t_final=60.0,
+        t_transient=10.0,
+        n_samples=20,
+        n_exponents=1,
+    )
+    assert estimates.shape[1] == 1
+    assert estimates[-1, 0] == pytest.approx(0.9056, abs=0.12)
+
+
 def test_l63_is_not_chaotic_below_the_hopf_threshold():
     """rho = 15 < rho_Hopf: trajectories spiral onto a stable fixed point."""
     spectrum = lyapunov.lyapunov_spectrum(

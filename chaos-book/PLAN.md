@@ -95,11 +95,13 @@ start and no link is dead.
 
 ### Part III — Quantifying chaos and predictability
 
-7. **Lyapunov exponents and doubling times** — Oseledets' theorem; the full spectrum
-   via the Benettin algorithm; global vs. finite-time exponents, and why the second is
-   what governs *today's* forecast. *Notebook:* the L63 spectrum, with the exact check
-   $\sum_i \lambda_i = -(\sigma+1+\beta)$ shown live. *Knob:* $\rho$ across the
-   transition.
+7. ★ **Lyapunov exponents and doubling times** — Oseledets' theorem; the full spectrum
+   via the Benettin algorithm, with the exact check
+   $\sum_i \lambda_i = -(\sigma+1+\beta)$ shown live; finite-time exponents and the two
+   distinct reasons they run high over short windows (optimisation over direction, and
+   too short an average); and transient chaos — where a positive finite-$T$ exponent
+   faithfully describes a chaotic set the system will eventually leave.
+   *Knob:* $\rho$, integration length $T$, window $\tau$.
 8. **Attractors, fractal dimension, and entropy** — Correlation dimension,
    Kaplan–Yorke, Kolmogorov–Sinai entropy as an information-loss rate; Pesin's
    identity. *Notebook:* $\ln C(r)$ vs. $\ln r$ with the scaling window exposed as a
@@ -269,20 +271,20 @@ Pyodide build every reader's browser receives.
 
 | | Count |
 |---|---|
-| Chapters live | **3** (4, 6, 20) |
-| Chapters stubbed | 28 |
+| Chapters live | **4** (4, 6, 7, 20) |
+| Chapters stubbed | 27 |
 | `chaoslib` modules | 10 |
-| `chaoslib` tests | 100, all passing |
+| `chaoslib` tests | 109, all passing |
 
 **Next chapters, in priority order** — each already has most of its material in hand:
 
-1. **Ch. 7** (Lyapunov exponents) — `chaoslib.lyapunov` is complete and tested; the
-   chapter is mostly exposition plus a spectrum figure.
-2. **Ch. 15** (tangent linear and adjoint) — `chaoslib.adjoint` is complete and
+1. **Ch. 15** (tangent linear and adjoint) — `chaoslib.adjoint` is complete and
    tested, including the finite-difference validation curve the chapter is built on,
    and chapter 20 already depends on it conceptually.
-3. **Ch. 5** (maps and bifurcations) — small, self-contained, no new library code.
-4. **Ch. 11** (Lorenz 96) — `chaoslib.systems.lorenz96` and the spectrum are tested.
+2. **Ch. 5** (maps and bifurcations) — small, self-contained, no new library code.
+3. **Ch. 11** (Lorenz 96) — `chaoslib.systems.lorenz96` and the spectrum are tested.
+4. **Ch. 8** (dimension) — `chaoslib.dimension` is tested, and chapter 7 already
+   promises that chapter's independent check of $D_{KY}$.
 5. **Ch. 18/19** (variational and ensemble DA) — chapter 20 currently carries their
    theory sections; see the note below.
 
