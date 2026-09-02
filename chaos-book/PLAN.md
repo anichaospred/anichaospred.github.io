@@ -124,9 +124,16 @@ start and no link is dead.
 
 ### Part IV — Many scales, many degrees of freedom
 
-11. **Lorenz 96: a many-variable atmosphere analogue** — Spatiotemporal chaos; the
-    Lyapunov spectrum; 13 positive exponents at $N=40, F=8$; scaling with $N$ and $F$.
-    *Notebook:* Hovmöller diagram beside the live spectrum. *Knob:* $F$, $N$.
+11. ★ **Lorenz 96: a many-variable atmosphere analogue** — The first system in the
+    book with a *space*. Its preferred wavelength comes out of a closed-form
+    dispersion relation, $\sigma(\theta) = -1 + F(e^{i\theta} - e^{-2i\theta})$,
+    which reproduces every Jacobian eigenvalue at the uniform state to $5\times
+    10^{-14}$ and gives $F_{\rm crit} = 2/\sqrt5$ exactly at $N = 40$. Two
+    thresholds, far apart: waves at $F = 0.894$, chaos only near $F = 4.5$. The
+    headline is **extensivity** — $\lambda_1$ intensive (flat above $N \approx 30$),
+    the spectrum collapsing under $i \to i/N$, and $D_{KY} = 0.675N$,
+    $h_{KS} = 0.256N$ through the origin. That ratio is why Part V's ensemble methods
+    look the way they do. *Knob:* $F$, $N$, the time window.
 12. **Scale-dependent error growth and the intrinsic limit** — Lorenz (1969);
     multiscale L96 (Lorenz 2005); the upscale error cascade; the case for a *finite*
     limit that no observing system can defeat. *Notebook:* seed error at one scale and
@@ -282,16 +289,17 @@ Pyodide build every reader's browser receives.
 
 | | Count |
 |---|---|
-| Chapters live | **7** (4, 5, 6, 7, 15, 16, 20) |
-| Chapters stubbed | 24 |
+| Chapters live | **8** (4, 5, 6, 7, 11, 15, 16, 20) |
+| Chapters stubbed | 23 |
 | `chaoslib` modules | 10 |
-| `chaoslib` tests | 133, all passing |
+| `chaoslib` tests | 147, all passing |
 
 **Next chapters, in priority order** — each already has most of its material in hand:
 
-1. **Ch. 11** (Lorenz 96) — `chaoslib.systems.lorenz96` and the spectrum are tested.
-2. **Ch. 8** (dimension) — `chaoslib.dimension` is tested, and chapter 7 already
+1. **Ch. 8** (dimension) — `chaoslib.dimension` is tested, and chapter 7 already
    promises that chapter's independent check of $D_{KY}$.
+2. **Ch. 12** (scale-dependent error growth) — `chaoslib.spatial` landed with chapter
+   11, which is most of what this needs beyond the multiscale Lorenz 2005 system.
 3. **Ch. 18/19** (variational and ensemble DA) — chapter 20 currently carries their
    theory sections; see the note below.
 

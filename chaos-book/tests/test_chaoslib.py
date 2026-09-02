@@ -35,6 +35,7 @@ from chaoslib import (
     lyapunov,
     maps,
     plotting,
+    spatial,
     systems,
 )
 
@@ -1730,3 +1731,291 @@ def test_periodic_window_has_its_own_cascade_with_the_same_delta():
         f"sub-cascade delta {estimate:.6f}"
     )
     assert cascade[-1] - cascade[0] < 0.022
+
+
+# ==========================================================================
+# Lorenz 96: linear theory about the uniform state
+# ==========================================================================
+def test_lorenz96_uniform_state_is_an_exact_zero_of_the_rhs():
+    """x_k = F kills the quadratic terms identically, not to a tolerance.
+
+    (x_{k+1} - x_{k-2}) x_{k-1} = (F - F) F = 0 exactly in floating point, and
+    -F + F = 0 exactly, so the residual is 0.0 for every F and N.
+    """
+    for n in (12, 40, 61):
+        for forcing in (0.5, 8.0, 20.0):
+            state = systems.lorenz96_uniform_state(forcing, n)
+            residual = systems.lorenz96(0.0, state, forcing)
+            assert np.max(np.abs(residual)) == 0.0, f"N={n}, F={forcing}"
+
+
+def test_lorenz96_dispersion_reproduces_every_jacobian_eigenvalue():
+    """The circulant Jacobian is diagonalised exactly by Fourier modes.
+
+    sigma(theta) = -1 + F(e^{i theta} - e^{-2 i theta}) is not an approximation:
+    the N values it returns are the N eigenvalues of the Jacobian at the uniform
+    state, as a set. Compared after a deterministic lexicographic sort, since
+    conjugate pairs share a real part and no ordering is implied by either
+    computation.
+    """
+    for n, forcing in ((20, 3.0), (40, 8.0), (60, 12.0)):
+        jacobian = systems.lorenz96_jacobian(
+            systems.lorenz96_uniform_state(forcing, n), forcing
+        )
+        numeric = np.linalg.eigvals(jacobian)
+        analytic = systems.lorenz96_dispersion(np.arange(n), n, forcing)
+
+        def lexsorted(z):
+            return z[np.lexsort((np.round(z.imag, 9), np.round(z.real, 9)))]
+
+        difference = np.abs(lexsorted(numeric) - lexsorted(analytic)).max()
+        assert difference < 1e-11, f"N={n}, F={forcing}: {difference:.2e}"
+
+
+def test_lorenz96_critical_forcing_matches_the_closed_form():
+    """Re sigma = -1 + F(cos t - cos 2t), so F_crit = 1/max(cos t - cos 2t).
+
+    Writing u = cos theta the bracket is 1 + u - 2u^2, maximised at u = 1/4 with
+    value 9/8. A finite chain can only use integer wavenumbers, so F_crit
+    approaches 8/9 from above as N grows. At N = 20 and N = 40 the best
+    available mode gives exactly sqrt(5)/2, hence F_crit = 2/sqrt(5).
+    """
+    for n, m_star in ((20, 4), (40, 8)):
+        forcing, mode = systems.lorenz96_critical_forcing(n)
+        assert mode == m_star
+        assert forcing == pytest.approx(2.0 / np.sqrt(5.0), abs=1e-12)
+
+    # Monotone approach to the continuum limit 8/9.
+    values = [systems.lorenz96_critical_forcing(n)[0] for n in (40, 60, 80, 200)]
+    assert all(a >= b for a, b in zip(values, values[1:])), values
+    assert values[-1] == pytest.approx(8.0 / 9.0, abs=2e-4)
+    assert min(values) > 8.0 / 9.0 - 1e-12
+
+
+def test_lorenz96_uniform_state_stability_switches_at_the_critical_forcing():
+    """Below F_crit every mode decays; above it at least one grows. Checked
+    against the eigenvalues of the Jacobian, not against the closed form, so
+    this is an independent statement about the model rather than about algebra.
+    """
+    n = 40
+    forcing_crit, _ = systems.lorenz96_critical_forcing(n)
+    for forcing, expect_unstable in (
+        (0.99 * forcing_crit, False),
+        (1.01 * forcing_crit, True),
+    ):
+        jacobian = systems.lorenz96_jacobian(
+            systems.lorenz96_uniform_state(forcing, n), forcing
+        )
+        growth = np.linalg.eigvals(jacobian).real.max()
+        assert bool(growth > 0.0) is expect_unstable, f"F={forcing}: max Re = {growth}"
+
+
+# ==========================================================================
+# Lorenz 96: the spectrum, the trace identity, and extensivity
+# ==========================================================================
+def test_l96_spectrum_sums_to_minus_n(l96_spectrum):
+    """Every diagonal entry of the Lorenz 96 Jacobian is -1, so tr J = -N
+    identically and the exponents of the *flow* sum to exactly -N.
+
+    The analogue of the Lorenz 63 trace identity, and the same kind of check:
+    it constrains the sum, so it holds however poorly the individual exponents
+    have converged. What it does *not* do is hold to machine precision, because
+    the measurement is made on an RK4 propagator rather than on the flow -- see
+    the convergence test below, which is the sharper statement.
+    """
+    assert l96_spectrum.size == 40
+    assert l96_spectrum.sum() == pytest.approx(-40.0, abs=1e-4)
+
+
+def test_l96_trace_identity_error_is_fourth_order_in_dt():
+    """The residual in sum(lambda) = -N is pure RK4 truncation.
+
+    Two things distinguish a discretisation error from a sampling error, and
+    both are asserted: the residual is **independent of the averaging time**
+    (halving or doubling T does not move it), and it falls by ~16 for each
+    halving of dt. Together they say the identity is exact for the flow and
+    that nothing else is wrong with the tangent propagator -- a much stronger
+    claim than any single tolerance.
+    """
+    n = 12
+
+    def residual(dt, t_final):
+        state = systems.lorenz96_uniform_state(8.0, n)
+        state[n // 2] += 0.01
+        spectrum = lyapunov.lyapunov_spectrum(
+            systems.lorenz96,
+            systems.lorenz96_jacobian,
+            state,
+            dt=dt,
+            t_final=t_final,
+            t_transient=10.0,
+            forcing=8.0,
+        )
+        return abs(spectrum.sum() + n)
+
+    errors = [residual(dt, 60.0) for dt in (0.02, 0.01, 0.005)]
+    for coarse, fine in zip(errors, errors[1:]):
+        ratio = coarse / fine
+        assert 8.0 < ratio < 26.0, f"dt^4 expected ~16, got {ratio:.1f} from {errors}"
+
+    # Independent of the averaging window: a sampling error would shrink here.
+    short, long = residual(0.01, 40.0), residual(0.01, 120.0)
+    assert abs(short - long) < 0.35 * max(short, long), (short, long)
+
+
+def test_l96_ks_entropy_is_the_sum_of_the_positive_exponents(l96_spectrum):
+    """Pesin's identity, as chaoslib implements it."""
+    positive = l96_spectrum[l96_spectrum > 0.0]
+    assert lyapunov.ks_entropy(l96_spectrum) == pytest.approx(
+        positive.sum(), rel=1e-12
+    )
+    # For N=40, F=8 this is around 9-10 nats per time unit -- an order of
+    # magnitude above Lorenz 63's 0.9, which is the whole point of the model.
+    assert 8.0 < lyapunov.ks_entropy(l96_spectrum) < 11.0
+
+
+def test_lorenz96_is_extensive():
+    """The defining property of spatiotemporal chaos, and chapter 11's headline.
+
+    The Lyapunov spectrum is *intensive*: lambda_1 does not grow with the size
+    of the domain. The entropy and the attractor dimension are *extensive*: both
+    are proportional to N, so h_KS/N and D_KY/N are constants of the model
+    rather than of the domain.
+
+    Tolerances are loose because each exponent is a finite-time average over a
+    single trajectory; the claim being tested is proportionality, not a
+    high-precision value.
+    """
+    ratios_h, ratios_d, leading = [], [], []
+    for n in (16, 24, 40):
+        state = systems.lorenz96_uniform_state(8.0, n)
+        state[n // 2] += 0.01
+        spectrum = lyapunov.lyapunov_spectrum(
+            systems.lorenz96,
+            systems.lorenz96_jacobian,
+            state,
+            dt=0.01,
+            t_final=120.0,
+            t_transient=20.0,
+            forcing=8.0,
+        )
+        # The trace identity must hold at every N (to RK4 truncation, which
+        # grows with N because the residual is a sum of N terms).
+        assert spectrum.sum() == pytest.approx(-float(n), abs=1e-4), f"N={n}"
+        leading.append(spectrum[0])
+        ratios_h.append(lyapunov.ks_entropy(spectrum) / n)
+        ratios_d.append(lyapunov.kaplan_yorke_dimension(spectrum) / n)
+
+    # Intensive: the leading exponent is the same at every domain size.
+    assert max(leading) - min(leading) < 0.25, leading
+    # Extensive: the densities are constant to within a few percent.
+    assert max(ratios_h) - min(ratios_h) < 0.03, ratios_h
+    assert max(ratios_d) - min(ratios_d) < 0.03, ratios_d
+    assert 0.22 < np.mean(ratios_h) < 0.28
+    assert 0.64 < np.mean(ratios_d) < 0.70
+
+
+# ==========================================================================
+# spatial: diagnostics for a field on a ring
+# ==========================================================================
+def _planted_wave(wavenumber, omega, n=40, dt=0.01, steps=2000, amplitude=2.5):
+    """cos(theta_m k + omega t), plus a large mean that must be removed."""
+    k = np.arange(n)
+    t = np.arange(steps) * dt
+    theta = 2.0 * np.pi * wavenumber / n
+    return amplitude * np.cos(theta * k[None, :] + omega * t[:, None]) + 7.0
+
+
+def test_spatial_power_spectrum_recovers_a_planted_wave():
+    """A single Fourier component carries amplitude^2 / 2 and nothing else does.
+
+    That normalisation is what makes the spectrum comparable between domain
+    sizes, which chapter 12 needs.
+    """
+    field = _planted_wave(8, 3.0, amplitude=2.5)
+    m, power = spatial.spatial_power_spectrum(field)
+    assert power[8] == pytest.approx(2.5**2 / 2.0, rel=1e-10)
+    assert power[0] < 1e-20  # the mean is removed
+    others = np.delete(power, [0, 8])
+    assert others.max() < 1e-20
+    assert spatial.dominant_wavenumber(field) == 8
+
+
+def test_phase_speed_recovers_a_planted_wave_including_its_sign():
+    """c = -omega/theta_m, exactly, in both directions.
+
+    The sign is the part worth testing: it is the difference between a wave
+    that propagates with the flow and one that propagates against it, and it
+    depends on a convention that is easy to get backwards.
+    """
+    for wavenumber, omega in ((8, 3.0), (5, -2.0), (13, 7.5)):
+        field = _planted_wave(wavenumber, omega)
+        theta = 2.0 * np.pi * wavenumber / 40
+        assert spatial.phase_speed(field, wavenumber, 0.01) == pytest.approx(
+            -omega / theta, rel=1e-8
+        )
+
+
+def test_phase_speed_rejects_inputs_it_cannot_interpret():
+    field = _planted_wave(8, 3.0)
+    with pytest.raises(ValueError):
+        spatial.phase_speed(field, 0, 0.01)  # m = 0 does not propagate
+    with pytest.raises(ValueError):
+        spatial.phase_speed(field[0], 8, 0.01)  # not a (time, space) field
+
+
+def test_spatial_correlation_matches_the_analytic_cosine():
+    """For a pure wave the autocorrelation is cos(theta_m s), exactly."""
+    n = 40
+    for wavenumber in (4, 5, 8, 10):
+        field = _planted_wave(wavenumber, 0.0, n=n, steps=50)
+        theta = 2.0 * np.pi * wavenumber / n
+        separations = np.arange(n // 2 + 1)
+        assert spatial.spatial_correlation(field) == pytest.approx(
+            np.cos(theta * separations), abs=1e-10
+        )
+
+
+def test_correlation_length_is_a_quarter_wavelength():
+    """cos(theta s) first crosses zero at s = N/(4m).
+
+    Exact when the crossing falls on a site (m = 5 and m = 10 at N = 40), and
+    biased slightly high otherwise: the estimate interpolates linearly across a
+    curve that is concave there, an O(theta^2) error which grows as the dominant
+    wavelength shortens.
+    """
+    n = 40
+    for wavenumber in (5, 10):
+        field = _planted_wave(wavenumber, 0.0, n=n, steps=20)
+        assert spatial.correlation_length(field) == pytest.approx(
+            n / (4.0 * wavenumber), abs=1e-9
+        )
+    # m = 8 puts the true crossing at 1.25, between sites 1 and 2.
+    field = _planted_wave(8, 0.0, n=n, steps=20)
+    estimate = spatial.correlation_length(field)
+    assert 1.25 < estimate < 1.29
+
+
+def test_the_named_colourmaps_exist_and_have_the_right_character():
+    """A diverging map for signed fields, a sequential one for non-negative.
+
+    Checked rather than assumed, because swapping them silently produces a
+    figure that hides the sign of the field it is drawing.
+    """
+    import matplotlib
+
+    diverging = matplotlib.colormaps[plotting.MPL_DIVERGING]
+    sequential = matplotlib.colormaps[plotting.MPL_SEQUENTIAL]
+
+    # A diverging map is light in the middle and dark at both ends.
+    def luminance(cmap, x):
+        r, g, b, _ = cmap(x)
+        return 0.2126 * r + 0.7152 * g + 0.0722 * b
+
+    middle = luminance(diverging, 0.5)
+    assert middle > luminance(diverging, 0.0) + 0.2
+    assert middle > luminance(diverging, 1.0) + 0.2
+
+    # A sequential map is monotone in luminance, so magnitude reads as darkness.
+    values = [luminance(sequential, x) for x in np.linspace(0.0, 1.0, 9)]
+    assert all(a < b for a, b in zip(values, values[1:])), values

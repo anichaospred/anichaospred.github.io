@@ -23,6 +23,7 @@ errorgrowth  saturation and the logistic error-growth model
 dimension    fractal dimension estimated from a sampled trajectory
 information  entropy, relative entropy and mutual information as predictability
 maps         bifurcation cascades, Feigenbaum universality, map Lyapunov exponents
+spatial      spectra, phase speeds and correlation lengths for fields on a ring
 adjoint      tangent-linear and adjoint propagators; singular vectors
 assimilate   3D-Var, 4D-Var, Kalman filter and EnKF on the low-order models
 ensemble     ensemble construction and probabilistic verification scores
@@ -48,6 +49,7 @@ from chaoslib import (
     lyapunov,
     maps,
     plotting,
+    spatial,
     systems,
 )
 
@@ -67,6 +69,7 @@ __all__ = [
     "lyapunov",
     "maps",
     "plotting",
+    "spatial",
     "systems",
     "__version__",
 ]

@@ -28,6 +28,9 @@ __all__ = [
     "lorenz63_hopf_rho",
     "lorenz96",
     "lorenz96_jacobian",
+    "lorenz96_uniform_state",
+    "lorenz96_dispersion",
+    "lorenz96_critical_forcing",
     "pendulum",
     "pendulum_energy",
     "pendulum_period_exact",
@@ -182,6 +185,81 @@ def lorenz96_jacobian(x: Array, forcing: float = 8.0) -> Array:
     j[idx, idx] = -1.0
     j[idx, (idx + 1) % n] = x[(idx - 1) % n]
     return j
+
+
+def lorenz96_uniform_state(forcing: float = 8.0, n: int = 40) -> Array:
+    r"""The uniform fixed point :math:`x_k = F` of :func:`lorenz96`.
+
+    An *exact* zero of the right-hand side for every :math:`F` and :math:`N`:
+    the quadratic terms cancel identically when all sites are equal
+    (:math:`(x_{k+1} - x_{k-2})x_{k-1} = (F - F)F = 0`), leaving
+    :math:`-F + F = 0`. This is the state the system sits in when the forcing is
+    too weak to sustain waves, and the state whose instability creates them.
+    """
+    return float(forcing) * np.ones(int(n), dtype=float)
+
+
+def lorenz96_dispersion(
+    wavenumbers: Array, n: int = 40, forcing: float = 8.0
+) -> Array:
+    r"""Growth rates and frequencies of perturbations to the uniform state.
+
+    Linearising :func:`lorenz96` about :math:`x_k = F` gives a Jacobian row of
+    :math:`-F` at :math:`k-2`, :math:`0` at :math:`k-1`, :math:`-1` at
+    :math:`k` and :math:`+F` at :math:`k+1`. It is a circulant matrix, so the
+    Fourier modes :math:`e^{i\theta k}` with :math:`\theta = 2\pi m/N`
+    diagonalise it exactly:
+
+    .. math::
+        \sigma(\theta) = -1 + F\left(e^{i\theta} - e^{-2i\theta}\right).
+
+    Returns the complex :math:`\sigma` for each requested integer wavenumber
+    :math:`m`. The real part is the growth rate, and the imaginary part gives
+    the phase speed: a mode :math:`\exp[i(\theta k + \omega t)]` has constant
+    phase along :math:`k = -\omega t/\theta`, so :math:`\omega > 0` means
+    propagation toward **decreasing** :math:`k`.
+
+    This is not an approximation -- it reproduces the eigenvalues of
+    :func:`lorenz96_jacobian` evaluated at the uniform state to machine
+    precision, and a test asserts it. It is also the cheapest way to see where
+    Lorenz 96's preferred wavelength comes from.
+    """
+    m = np.asarray(wavenumbers, dtype=float)
+    theta = 2.0 * np.pi * m / float(n)
+    return -1.0 + float(forcing) * (
+        np.exp(1j * theta) - np.exp(-2j * theta)
+    )
+
+
+def lorenz96_critical_forcing(n: int = 40) -> tuple[float, int]:
+    r"""Forcing at which the uniform state first loses stability, and the mode.
+
+    Returns ``(F_crit, m_star)``. From :func:`lorenz96_dispersion`,
+    :math:`\operatorname{Re}\sigma = -1 + F(\cos\theta - \cos 2\theta)`, so the
+    uniform state is stable until
+
+    .. math::
+        F_{\rm crit} = \Bigl[\max_m\bigl(\cos\theta_m - \cos 2\theta_m\bigr)
+                       \Bigr]^{-1},
+
+    the maximum taken over the integer wavenumbers the chain admits. Writing
+    :math:`u = \cos\theta`, the bracket is :math:`1 + u - 2u^2`, maximised at
+    :math:`u = 1/4` with value :math:`9/8` -- so in the continuum limit
+    :math:`F_{\rm crit} \to 8/9` and the preferred mode is the one nearest
+    :math:`\theta = \arccos(1/4)`. A finite chain can only pick the closest
+    admissible integer, which is why :math:`F_{\rm crit}` depends slightly on
+    :math:`N`: at :math:`N = 40` the best available is :math:`m = 8`, giving
+    :math:`F_{\rm crit} = 2/\sqrt{5} = 0.8944`.
+
+    :math:`m^*` is the wavelength the instability *selects*, and it is close to
+    (though not identical with) the wavenumber that dominates the fully
+    nonlinear flow.
+    """
+    m = np.arange(int(n) // 2 + 1)
+    theta = 2.0 * np.pi * m / float(n)
+    gain = np.cos(theta) - np.cos(2.0 * theta)
+    best = int(np.argmax(gain))
+    return float(1.0 / gain[best]), int(m[best])
 
 
 # --------------------------------------------------------------------------
