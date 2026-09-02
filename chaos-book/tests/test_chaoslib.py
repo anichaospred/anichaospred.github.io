@@ -590,6 +590,85 @@ def test_singular_values_exceed_asymptotic_growth_over_short_windows(
     )
 
 
+def test_weighted_singular_vectors_reduce_to_the_plain_svd(l63_propagator):
+    """weight=ones must be byte-identical to weight=None.
+
+    The weighted path takes a different route (SVD of E^{1/2} M E^{-1/2}), so this
+    pins that the default behaviour did not change when the option was added.
+    """
+    plain = adjoint.singular_vectors(l63_propagator, 3)
+    unit = adjoint.singular_vectors(l63_propagator, 3, weight=np.ones(3))
+    for a, b in zip(plain, unit):
+        assert np.allclose(a, b)
+
+
+@pytest.mark.parametrize(
+    "weight",
+    [
+        np.array([1.0, 1.0, 25.0]),
+        np.array([25.0, 1.0, 1.0]),
+        np.array([[2.0, 0.3, 0.0], [0.3, 1.5, 0.1], [0.0, 0.1, 1.0]]),
+    ],
+)
+def test_weighted_sigma_is_the_achieved_amplification_in_that_norm(
+    l63_propagator, weight
+):
+    """sigma_1 must be the E-norm growth the returned vector actually achieves.
+
+    The check that matters: it is easy to compute a weighted SVD and return
+    vectors in the *transformed* space, which then do not achieve the reported
+    amplification when applied to the real state. Both a diagonal and a full
+    symmetric positive definite weight are exercised.
+    """
+    sigma, initial, _ = adjoint.singular_vectors(
+        l63_propagator, 1, weight=weight
+    )
+    e_mat = np.diag(weight) if weight.ndim == 1 else weight
+    v = initial[:, 0]
+    grown = l63_propagator @ v
+    achieved = np.sqrt(grown @ e_mat @ grown) / np.sqrt(v @ e_mat @ v)
+    assert achieved == pytest.approx(float(sigma[0]), rel=1e-10)
+
+
+def test_weighted_optimal_growth_beats_a_random_direction_in_that_norm(
+    l63_propagator,
+):
+    weight = np.array([1.0, 1.0, 25.0])
+    e_mat = np.diag(weight)
+    sigma, _, _ = adjoint.singular_vectors(l63_propagator, 1, weight=weight)
+    rng = np.random.default_rng(0)
+    for _ in range(20):
+        v = rng.normal(size=3)
+        grown = l63_propagator @ v
+        achieved = np.sqrt(grown @ e_mat @ grown) / np.sqrt(v @ e_mat @ v)
+        assert achieved <= float(sigma[0]) * (1.0 + 1e-9)
+
+
+def test_weighted_singular_vectors_reject_a_non_positive_weight(l63_propagator):
+    with pytest.raises(ValueError, match="positive"):
+        adjoint.singular_vectors(l63_propagator, 1, weight=np.array([1.0, 0.0, 1.0]))
+    with pytest.raises(ValueError, match="positive definite"):
+        adjoint.singular_vectors(
+            l63_propagator, 1, weight=np.diag([1.0, -2.0, 1.0])
+        )
+
+
+def test_the_norm_changes_which_perturbation_grows_fastest(l63_propagator):
+    """Not a technicality: different norms give materially different answers.
+
+    If this ever came out as "the same vector either way", the weighted option
+    would be pointless and the chapter-16 discussion wrong.
+    """
+    _, euclid, _ = adjoint.singular_vectors(l63_propagator, 1)
+    _, weighted, _ = adjoint.singular_vectors(
+        l63_propagator, 1, weight=np.array([25.0, 1.0, 1.0])
+    )
+    a = euclid[:, 0] / np.linalg.norm(euclid[:, 0])
+    b = weighted[:, 0] / np.linalg.norm(weighted[:, 0])
+    angle = np.degrees(np.arccos(min(1.0, abs(float(a @ b)))))
+    assert angle > 10.0
+
+
 def test_singular_vector_actually_achieves_the_predicted_amplification(
     l63_propagator,
 ):

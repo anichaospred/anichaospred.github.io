@@ -166,24 +166,69 @@ def tangent_linear_error(
 
 
 def singular_vectors(
-    propagator: Array, n_vectors: int = 1
+    propagator: Array, n_vectors: int = 1, weight: Array | None = None
 ) -> tuple[Array, Array, Array]:
     r"""Leading singular values and vectors of a TLM propagator.
 
     Returns ``(sigma, initial_vectors, final_vectors)`` where ``sigma`` are the
     largest ``n_vectors`` singular values, ``initial_vectors`` the corresponding
-    right singular vectors (the optimal initial perturbations, as *columns*), and
-    ``final_vectors`` the left singular vectors (their evolved shape).
+    optimal initial perturbations (as *columns*), and ``final_vectors`` their
+    evolved shapes.
 
     Amplification over the window is :math:`\sigma`, not :math:`e^{\lambda\tau}`:
     for short windows singular-vector growth substantially exceeds what the
     leading Lyapunov exponent would suggest, which is precisely why operational
     centres perturb along singular vectors rather than random directions.
+
+    Parameters
+    ----------
+    weight
+        Optional inner-product weights defining the norm in which growth is
+        measured -- a 1-D array of diagonal weights, or a symmetric positive
+        definite matrix. ``None`` (the default) means the Euclidean norm.
+
+    **Singular vectors are norm-dependent, and that is not a technicality.**
+    "Which perturbation grows fastest" has no answer until you say *fastest in
+    what measure*. Under the weighted inner product
+    :math:`\langle u,v\rangle_E = u^{\top}\mathbf{E}v` the problem is
+
+    .. math::
+        \max_{v}\ \frac{(\mathbf{M}v)^{\top}\mathbf{E}(\mathbf{M}v)}
+                          {v^{\top}\mathbf{E}v},
+
+    solved here as the ordinary SVD of
+    :math:`\mathbf{E}^{1/2}\mathbf{M}\mathbf{E}^{-1/2}`, with the vectors mapped
+    back to state space. Operational centres compute singular vectors in a
+    total-energy norm and get different structures from what a Euclidean norm
+    would give; the returned ``sigma`` is the amplification *in the norm you
+    asked for*.
     """
     m = np.asarray(propagator, dtype=float)
-    u, s, vt = np.linalg.svd(m)
     k = int(n_vectors)
-    return s[:k], vt[:k].T, u[:, :k]
+
+    if weight is None:
+        u, s, vt = np.linalg.svd(m)
+        return s[:k], vt[:k].T, u[:, :k]
+
+    w = np.asarray(weight, dtype=float)
+    if w.ndim == 1:
+        if np.any(w <= 0.0):
+            raise ValueError("diagonal weights must be positive")
+        root = np.diag(np.sqrt(w))
+        inv_root = np.diag(1.0 / np.sqrt(w))
+    else:
+        vals, vecs = np.linalg.eigh(w)
+        if np.any(vals <= 0.0):
+            raise ValueError("weight matrix must be positive definite")
+        root = vecs @ np.diag(np.sqrt(vals)) @ vecs.T
+        inv_root = vecs @ np.diag(1.0 / np.sqrt(vals)) @ vecs.T
+
+    u, s, vt = np.linalg.svd(root @ m @ inv_root)
+    # Map back: a unit vector in the transformed space corresponds to a unit
+    # E-norm vector in state space.
+    initial = inv_root @ vt[:k].T
+    final = inv_root @ u[:, :k]
+    return s[:k], initial, final
 
 
 def leading_singular_value(propagator: Array) -> float:
