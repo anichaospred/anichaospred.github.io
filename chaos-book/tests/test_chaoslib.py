@@ -2459,3 +2459,154 @@ def test_two_scale_lorenz96_state_has_the_advertised_shape():
     # The slow part starts near the forcing, the fast part near zero.
     assert np.abs(slow - 20.0).max() < 1.0
     assert np.abs(fast).max() < 1.0
+
+
+# ==========================================================================
+# errorgrowth: fitting the logistic model, and the two saturation statistics
+# ==========================================================================
+def test_logistic_fit_recovers_exact_parameters_from_a_clean_curve():
+    """Both fit spaces are exact when the model is exactly right.
+
+    Worth pinning, because it localises the log-vs-linear difference: it is not
+    about the ideal case, it is entirely about robustness to the model being
+    slightly wrong -- which is the only case that ever occurs.
+    """
+    t = np.linspace(0.0, 25.0, 500)
+    truth = errorgrowth.logistic_error_growth(t, 1e-6, 0.9, 20.0)
+    for space in ("log", "linear"):
+        e0, rate, sat = errorgrowth.fit_logistic_error_growth(
+            t, truth, saturation=20.0, space=space
+        )
+        assert e0 == pytest.approx(1e-6, rel=1e-4), space
+        assert rate == pytest.approx(0.9, rel=1e-5), space
+        assert sat == 20.0
+    # With the saturation free, all three come back.
+    e0, rate, sat = errorgrowth.fit_logistic_error_growth(t, truth, space="log")
+    assert (e0, rate, sat) == pytest.approx((1e-6, 0.9, 20.0), rel=1e-3)
+
+
+def test_linear_space_logistic_fit_is_dominated_by_the_saturated_tail():
+    """The defect that makes log space the default, with its size pinned.
+
+    An error curve spans ten orders of magnitude, and least squares on E weights
+    each point by E -- so a handful of points near saturation outweigh the whole
+    exponential phase, and lambda comes out of a fit that never saw the phase
+    that defines it.
+
+    Given a 15% multiplicative shape error, which is less than real data has:
+    log space recovers lambda to under 1% and E_0 within a factor of 1.1;
+    linear space is 30% out in lambda and more than a hundredfold out in E_0.
+    """
+    t = np.linspace(0.0, 25.0, 500)
+    rng = np.random.default_rng(0)
+    truth = errorgrowth.logistic_error_growth(t, 1e-6, 0.9, 20.0)
+    measured = np.maximum(
+        truth * (1.0 + 0.15 * np.sin(0.7 * t) + 0.05 * rng.normal(size=t.size)),
+        1e-12,
+    )
+
+    log_e0, log_rate, _ = errorgrowth.fit_logistic_error_growth(
+        t, measured, saturation=20.0, space="log"
+    )
+    lin_e0, lin_rate, _ = errorgrowth.fit_logistic_error_growth(
+        t, measured, saturation=20.0, space="linear"
+    )
+
+    assert log_rate == pytest.approx(0.9, rel=0.05), log_rate
+    assert 0.5 < log_e0 / 1e-6 < 2.0, log_e0
+    # The linear fit is much worse in both parameters.
+    assert abs(lin_rate - 0.9) > 5.0 * abs(log_rate - 0.9), (lin_rate, log_rate)
+    assert not 0.1 < lin_e0 / 1e-6 < 10.0, lin_e0
+
+
+def test_logistic_fit_rejects_bad_arguments():
+    t = np.linspace(0.0, 5.0, 20)
+    curve = errorgrowth.logistic_error_growth(t, 1e-3, 1.0, 1.0)
+    with pytest.raises(ValueError, match="space must be"):
+        errorgrowth.fit_logistic_error_growth(t, curve, 1.0, space="quadratic")
+    with pytest.raises(ValueError, match="strictly positive"):
+        errorgrowth.fit_logistic_error_growth(
+            t, np.r_[0.0, curve[1:]], 1.0, space="log"
+        )
+
+
+def test_rms_saturation_is_root_two_times_the_spread():
+    """An exact identity: for independent draws from one distribution,
+    <||x-y||^2> = 2 <||x - mean||^2>.
+
+    So the RMS saturation level is sqrt(2) times the RMS spread about the mean,
+    whatever the distribution. Checked on a Lorenz 63 trajectory and on two
+    synthetic sets, since it is a property of the statistic and not of the
+    attractor.
+    """
+    grid = integrate.trajectory_grid(t_final=400.0, dt=0.01)
+    trajectory = integrate.rk4(
+        systems.lorenz63, np.array([1.0, 1.0, 20.0]), grid
+    )[3000:]
+    rng = np.random.default_rng(3)
+    cases = {
+        "lorenz63": trajectory,
+        "gaussian": rng.normal(0.0, 1.0, (40_000, 12)),
+        "bimodal": np.concatenate(
+            [rng.normal(-5.0, 0.4, (20_000, 1)), rng.normal(5.0, 0.4, (20_000, 1))]
+        ),
+    }
+    for name, points in cases.items():
+        spread = float(
+            np.sqrt(np.mean(np.sum((points - points.mean(axis=0)) ** 2, axis=-1)))
+        )
+        rms = errorgrowth.saturation_level(points, statistic="rms")
+        assert rms == pytest.approx(np.sqrt(2.0) * spread, rel=0.01), name
+
+
+def test_mean_and_rms_saturation_differ_by_an_attractor_dependent_factor():
+    """The trap chapter 9 documents: an ensemble-MEAN error curve must be
+    compared against the MEAN saturation, not the RMS one.
+
+    By Jensen the mean is always smaller, and how much smaller depends on how
+    broad the distribution of pair distances is: 0.74 for a bimodal set, 0.89
+    for Lorenz 63 (whose two lobes do the same thing more mildly), and 0.99 in
+    high dimension where distances concentrate. Mixing them makes an error curve
+    look as though it stops growing early, which then appears as an error in the
+    growth model's *shape*.
+    """
+    rng = np.random.default_rng(5)
+    bimodal = np.concatenate(
+        [rng.normal(-5.0, 0.4, (20_000, 1)), rng.normal(5.0, 0.4, (20_000, 1))]
+    )
+    concentrated = rng.normal(0.0, 1.0, (40_000, 30))
+
+    ratios = {}
+    for name, points in (("bimodal", bimodal), ("concentrated", concentrated)):
+        mean = errorgrowth.saturation_level(points, statistic="mean")
+        rms = errorgrowth.saturation_level(points, statistic="rms")
+        assert mean < rms, name  # Jensen, always
+        ratios[name] = mean / rms
+
+    assert ratios["bimodal"] == pytest.approx(0.74, abs=0.03), ratios
+    assert ratios["concentrated"] == pytest.approx(0.99, abs=0.01), ratios
+    # The distinction is worth 25 percentage points between these two.
+    assert ratios["concentrated"] - ratios["bimodal"] > 0.2, ratios
+
+    with pytest.raises(ValueError, match="statistic must be"):
+        errorgrowth.saturation_level(concentrated, statistic="median")
+
+
+def test_logistic_form_requires_slope_over_intercept_of_minus_one():
+    """d(ln E)/dt = lambda (1 - E/E_inf) is a straight line in E with
+    slope/intercept exactly -1, so the ratio is a fitting-free test of the
+    model's *form*.
+
+    Verified here on a curve the model generated, so the ratio must come back
+    at -1 to numerical precision. Chapter 9 applies the same test to measured
+    curves and gets -1.03 for Lorenz 63 and -1.17 for Lorenz 96.
+    """
+    rate, saturation = 0.9, 20.0
+    t = np.linspace(0.0, 30.0, 4000)
+    curve = errorgrowth.logistic_error_growth(t, 1e-8, rate, saturation)
+    local = np.gradient(np.log(curve), t)
+    fraction = curve / saturation
+    window = (fraction > 0.02) & (fraction < 0.85)
+    slope, intercept = np.polyfit(fraction[window], local[window], 1)
+    assert intercept == pytest.approx(rate, rel=1e-3)
+    assert slope / intercept == pytest.approx(-1.0, abs=1e-3)

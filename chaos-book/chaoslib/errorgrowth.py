@@ -56,7 +56,7 @@ def logistic_error_growth(
 
 
 def fit_logistic_error_growth(
-    t: Array, error: Array, saturation: float | None = None
+    t: Array, error: Array, saturation: float | None = None, space: str = "log"
 ) -> tuple[float, float, float]:
     r"""Fit :math:`(E_0, \lambda, E_\infty)` to a measured error curve.
 
@@ -65,42 +65,105 @@ def fit_logistic_error_growth(
     the tail of the curve constrains it weakly). Returns
     ``(e0, growth_rate, saturation)``.
 
-    Fitting the full curve with this model, rather than a straight line to the
-    early portion, is the honest way to get :math:`\lambda` when the record
-    already includes the bend-over.
+    **Fit in log space, which is why that is the default.** An error curve spans
+    the whole way from the initial perturbation to saturation -- ten orders of
+    magnitude is normal -- and least squares on :math:`E` weights each point by
+    :math:`E`. The handful of points near saturation then contribute residuals
+    of order :math:`E_\infty` while the entire exponential phase contributes
+    residuals of order :math:`E_0`, so the optimiser never sees the exponential
+    phase at all, and :math:`\lambda` -- which is *defined* by that phase --
+    comes out of a fit that ignored it.
+
+    Measured on the 1024-member Lorenz 63 twin experiment of chapter 9, started
+    at :math:`\delta_0 = 10^{-6}` and against an early-time exponential rate of
+    0.921: ``space="log"`` returns :math:`\lambda = 0.919` and
+    :math:`E_0 = 3.6\times10^{-6}`, while ``space="linear"`` returns 0.748 and
+    :math:`5.3\times10^{-5}`. So the linear fit is 19 % out in the rate and
+    fifty-fold out in the amplitude, and it produces a curve that looks entirely
+    convincing on a linear plot. The log-space rate is also stable across
+    initial amplitudes (0.920, 0.919, 0.921 at
+    :math:`\delta_0 = 10^{-8}, 10^{-6}, 10^{-4}`) where the linear one is not
+    (0.716, 0.748, 0.722). ``space="linear"`` is kept only so that chapter 9 can
+    show this happening.
+
+    Note also that the fitted :math:`\lambda` is not the Lyapunov exponent even
+    when the fit is done properly: fitted over the nonlinear range it comes out
+    12 % below :math:`\lambda_1` for Lorenz 63 and 26 % below for Lorenz 96.
+    They are different quantities.
     """
     t = np.asarray(t, dtype=float)
     error = np.asarray(error, dtype=float)
     e_sat = float(np.nanmax(error)) if saturation is None else float(saturation)
+    if space not in ("log", "linear"):
+        raise ValueError(f"space must be 'log' or 'linear', not {space!r}")
+    if space == "log" and np.any(error <= 0.0):
+        raise ValueError("log-space fitting needs strictly positive errors")
 
-    if saturation is None:
-        def model(tt: Array, e0: float, rate: float, sat: float) -> Array:
-            return logistic_error_growth(tt, e0, rate, sat)
+    fit_free = saturation is None
 
-        p0 = (max(error[0], 1e-12), 1.0, e_sat)
-        popt, _ = curve_fit(model, t, error, p0=p0, maxfev=20000)
-        return float(popt[0]), float(popt[1]), float(popt[2])
+    def _predict(tt: Array, log_e0: float, rate: float, sat: float) -> Array:
+        return logistic_error_growth(tt, np.exp(log_e0), rate, sat)
 
-    def model_fixed(tt: Array, e0: float, rate: float) -> Array:
-        return logistic_error_growth(tt, e0, rate, e_sat)
+    def _residual_target(values: Array) -> Array:
+        return np.log(values) if space == "log" else values
 
-    p0 = (max(error[0], 1e-12), 1.0)
-    popt, _ = curve_fit(model_fixed, t, error, p0=p0, maxfev=20000)
-    return float(popt[0]), float(popt[1]), e_sat
+    if fit_free:
+        def model(tt: Array, log_e0: float, rate: float, sat: float) -> Array:
+            return _residual_target(_predict(tt, log_e0, rate, sat))
+
+        p0 = (np.log(max(error[0], 1e-12)), 1.0, e_sat)
+        popt, _ = curve_fit(
+            model, t, _residual_target(error), p0=p0, maxfev=40000
+        )
+        return float(np.exp(popt[0])), float(popt[1]), float(popt[2])
+
+    def model_fixed(tt: Array, log_e0: float, rate: float) -> Array:
+        return _residual_target(_predict(tt, log_e0, rate, e_sat))
+
+    p0 = (np.log(max(error[0], 1e-12)), 1.0)
+    popt, _ = curve_fit(
+        model_fixed, t, _residual_target(error), p0=p0, maxfev=40000
+    )
+    return float(np.exp(popt[0])), float(popt[1]), e_sat
 
 
-def saturation_level(trajectory: Array, seed: int | None = 0) -> float:
-    r"""Climatological error saturation: RMS distance between random state pairs.
+def saturation_level(
+    trajectory: Array, seed: int | None = 0, statistic: str = "rms"
+) -> float:
+    r"""Climatological error saturation: distance between random state pairs.
 
     The level a forecast error tends to once all skill is gone -- equivalently
-    the error of a random draw from climatology. Computed as the RMS distance
-    between independently shuffled pairs of states from a long trajectory, which
-    is what "two randomly chosen states of the attractor" means operationally.
+    the error of a random draw from climatology. Computed from independently
+    shuffled pairs of states from a long trajectory, which is what "two randomly
+    chosen states of the attractor" means operationally.
+
+    **Match the statistic to the error curve you are comparing against**, and
+    this is not a nicety. ``"rms"`` returns
+    :math:`\sqrt{\langle\|x-y\|^2\rangle}` and ``"mean"`` returns
+    :math:`\langle\|x-y\|\rangle`; by Jensen's inequality the second is
+    always the smaller, and how much smaller depends on the attractor. For
+    Lorenz 96 (:math:`N=40, F=8`) the ratio is 0.995 -- distances concentrate in
+    high dimension and the choice hardly matters. For Lorenz 63 it is **0.889**,
+    because the two lobes give a broad distribution of pair distances. Comparing
+    an ensemble-*mean* error curve against the *RMS* saturation therefore makes
+    the curve appear to stop growing at 89 % of saturation, which then shows up
+    as a spurious 12 % error in the logistic model's shape. Chapter 9 measures
+    this; it cost real time to find.
+
+    The RMS form also satisfies an exact identity worth checking an
+    implementation against: for independent draws from one distribution,
+    :math:`\langle\|x-y\|^2\rangle = 2\langle\|x-\bar x\|^2\rangle`, so
+    the RMS saturation is :math:`\sqrt2` times the RMS spread about the mean.
     """
     traj = np.asarray(trajectory, dtype=float)
     rng = np.random.default_rng(seed)
     idx = rng.permutation(traj.shape[0])
-    return float(np.sqrt(np.mean(np.sum((traj - traj[idx]) ** 2, axis=-1))))
+    distance = np.sqrt(np.sum((traj - traj[idx]) ** 2, axis=-1))
+    if statistic == "rms":
+        return float(np.sqrt(np.mean(distance**2)))
+    if statistic == "mean":
+        return float(np.mean(distance))
+    raise ValueError(f"statistic must be 'rms' or 'mean', not {statistic!r}")
 
 
 def predictability_horizon(

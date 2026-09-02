@@ -119,10 +119,18 @@ start and no link is dead.
    digit — chapter 20's logarithmic law from the geometric end. Delay embedding
    recovers $D_2$ from $x(t)$ alone. *Knob:* the scaling window, the Theiler window,
    the embedding dimension.
-9. **Error growth beyond the linear regime** — Lorenz's logistic error-growth model;
-   saturation; why a doubling time alone misstates the horizon. *Notebook:* fit
-   exponential and logistic models to the same measured curve and compare the horizons
-   they imply. *Knob:* $\delta_0$.
+9. ★ **Error growth beyond the linear regime** — Lorenz's logistic model, and three
+   measured traps. **Fitting:** least squares on $E$ rather than $\ln E$ gives
+   $\lambda = 0.748$ against a true 0.921, because the saturated tail outweighs the
+   whole exponential phase. **Statistics:** an ensemble-*mean* error curve compared
+   against the *RMS* saturation appears to stop growing at 89 % — worth 12 percentage
+   points of spurious model error in L63, where the two lobes broaden the pair-distance
+   distribution (0.889) but not in L96 (0.995). **Form:** the fitting-free test
+   slope/intercept $= -1$ gives $-1.027$ for L63 (2.7 %, good) but $-1.167$ for L96
+   (17 %), because thirteen positive exponents cannot be one $\lambda$. Also: the
+   logistic $\lambda$ is not $\lambda_1$ (12 % and 26 % low), and the doubling time
+   quadruples across the useful range. *Knob:* $\delta_0$, the fit space, the
+   threshold.
 10. **Information theory and predictability** — Entropy, relative entropy and mutual
     information as predictability measures; the signal and dispersion components of
     forecast information; a horizon that needs no assumption of exponential growth.
@@ -305,17 +313,18 @@ Pyodide build every reader's browser receives.
 
 | | Count |
 |---|---|
-| Chapters live | **10** (4, 5, 6, 7, 8, 11, 12, 15, 16, 20) |
-| Chapters stubbed | 21 |
+| Chapters live | **11** (4, 5, 6, 7, 8, 9, 11, 12, 15, 16, 20) |
+| Chapters stubbed | 20 |
 | `chaoslib` modules | 10 |
-| `chaoslib` tests | 167, all passing |
+| `chaoslib` tests | 173, all passing |
 
 **Next chapters, in priority order** — each already has most of its material in hand:
 
-1. **Ch. 9** (error growth past the linear regime) — `chaoslib.errorgrowth` is tested,
-   and chapters 6, 8 and 12 all now point at it.
-2. **Ch. 13** (operational error growth) — the natural sequel to 12: what real forecast
-   errors do, against the idealised $\lambda$ of Part III.
+1. **Ch. 13** (operational error growth) — the sequel to 9 and 12: what real forecast
+   errors do, against the idealised $\lambda$ of Part III. Chapter 9 ends by explaining
+   why it cannot just quote a $\lambda$.
+2. **Ch. 10** (information theory) — `chaoslib.information` is tested and unused by any
+   live chapter; chapter 8's $h_{KS}$ in bits is the hook.
 3. **Ch. 18/19** (variational and ensemble DA) — chapter 20 currently carries their
    theory sections; see the note below.
 
