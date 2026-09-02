@@ -42,6 +42,8 @@ __all__ = [
     "SCENE_BG",
     "FONT",
     "TIME_SCALE",
+    "MPL_DIVERGING",
+    "MPL_SEQUENTIAL",
     "style2d",
     "style3d",
     "MPL_RC",
@@ -71,6 +73,15 @@ C_ANALYSIS = "#0891b2"  # cyan      -- analysis (the DA estimate)
 SCENE_BG = "rgba(250,249,255,0.92)"
 FONT = "Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif"
 TIME_SCALE = "Plasma"  # colour = time along a trajectory
+
+# Colour *maps*, for fields rather than lines. The choice is semantic and fixed
+# here so that no figure picks its own: a field that takes both signs is drawn
+# with a diverging map about zero, so that the sign is legible and zero is not a
+# colour; a non-negative field gets a perceptually uniform sequential map.
+# Getting this backwards -- a sequential map on a signed field -- hides the sign
+# and invents a gradient across zero that the data does not have.
+MPL_DIVERGING = "RdBu_r"  # signed fields: deviations, tendencies, errors
+MPL_SEQUENTIAL = "plasma"  # non-negative fields, and colour-as-time
 
 
 def style2d(fig: Any, height: int = 460, title: str | None = None) -> Any:

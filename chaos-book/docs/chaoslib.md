@@ -139,12 +139,39 @@ superstable parameter gives a genuine $-\infty$, not an artefact.
 `gaussian_relative_entropy` (closed form, separating the signal and dispersion
 components).
 
+## `spatial` — diagnostics for a field on a ring
+
+`spatial_power_spectrum`, `dominant_wavenumber`, `phase_speed`, `spatial_correlation`,
+`correlation_length`.
+
+Lorenz 63 has no space, so an error in it has no wavelength. Lorenz 96 does, and these
+are the questions that become available: what scale is the error on, how fast does the
+structure move, how wide is it. Used by chapter 11 and by chapter 12's scale-dependent
+error growth.
+
+**Conventions:** the last axis is space, the leading axis is time — the same as
+`systems.lorenz96`, so a trajectory from `integrate.rk4` goes straight in. Wavenumber
+$m$ means $m$ waves around the ring. Speeds are in **sites per unit time**, signed, and
+positive means propagation toward increasing $k$ — matching
+`systems.lorenz96_dispersion`.
+
+`phase_speed` unwraps a Fourier phase, so it assumes the phase advances by less than
+$\pi$ per sample. At $\omega \approx 3$ rad per time unit, `dt = 0.01` is ample and
+`dt = 1` would alias and return a confidently wrong answer, with nothing in the result
+to indicate it. Check `dt` against $2\pi/\omega$.
+
 ## `plotting` — the book's figure design system
 
 Semantic colours (`C_TRUTH`, `C_PERT`, `C_SPREAD`, `C_MEAN`, `C_FIXED`, `C_SAT`,
 `C_START`, `C_CONTEXT`), plus three for data assimilation — `C_OBS` (observations),
 `C_BG` (background / free forecast) and `C_ANALYSIS` (the DA estimate) — `TIME_SCALE`
 for colour-as-time, and `style2d` / `style3d`.
+
+Two named colour *maps* for fields: `MPL_DIVERGING` for anything that takes both signs
+(deviations, tendencies, errors) so that zero is not a colour and the sign is legible,
+and `MPL_SEQUENTIAL` for non-negative fields. A test checks that the diverging map is
+light in the middle and the sequential one monotone in luminance, because swapping them
+silently produces a figure that hides the sign of the field it is drawing.
 
 **Two figure kinds.** `style2d`/`style3d` style *Plotly* panels, for chapters where
 hovering over a curve is part of the point. `mpl_panels`, `mpl_grid` and `finish_mpl`
