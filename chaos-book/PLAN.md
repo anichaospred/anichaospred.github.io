@@ -107,11 +107,18 @@ start and no link is dead.
    too short an average); and transient chaos — where a positive finite-$T$ exponent
    faithfully describes a chaotic set the system will eventually leave.
    *Knob:* $\rho$, integration length $T$, window $\tau$.
-8. **Attractors, fractal dimension, and entropy** — Correlation dimension,
-   Kaplan–Yorke, Kolmogorov–Sinai entropy as an information-loss rate; Pesin's
-   identity. *Notebook:* $\ln C(r)$ vs. $\ln r$ with the scaling window exposed as a
-   slider, so the reader discovers how easily a dimension is mis-measured. *Knob:* the
-   fit window.
+8. ★ **Attractors, fractal dimension, and entropy** — Two independent routes to the
+   same number: $D_2 = 2.0579$ from counting pairs against $D_{KY} = 2.0618$ from the
+   Lyapunov spectrum, a 0.2 % difference between calculations sharing no intermediate
+   quantity — the Kaplan–Yorke conjecture, tested. Calibrated first against three
+   sets whose dimension is exact ($\ln2/\ln3$, $\ln4/\ln3$, $\ln3/\ln2$). The
+   substance is how easily both are got wrong: the *same* $C(r)$ returns 0.19, 1.92 or
+   2.51 depending on the window, and the Theiler bias runs **opposite** to the usual
+   warning (high, not low, when the sampling step lands inside the fit window).
+   Pesin gives $h_{KS} = 1.30$ bits/MTU and $\ln10/\lambda_1 = 3.8$ days per decimal
+   digit — chapter 20's logarithmic law from the geometric end. Delay embedding
+   recovers $D_2$ from $x(t)$ alone. *Knob:* the scaling window, the Theiler window,
+   the embedding dimension.
 9. **Error growth beyond the linear regime** — Lorenz's logistic error-growth model;
    saturation; why a doubling time alone misstates the horizon. *Notebook:* fit
    exponential and logistic models to the same measured curve and compare the horizons
@@ -289,17 +296,17 @@ Pyodide build every reader's browser receives.
 
 | | Count |
 |---|---|
-| Chapters live | **8** (4, 5, 6, 7, 11, 15, 16, 20) |
-| Chapters stubbed | 23 |
+| Chapters live | **9** (4, 5, 6, 7, 8, 11, 15, 16, 20) |
+| Chapters stubbed | 22 |
 | `chaoslib` modules | 10 |
-| `chaoslib` tests | 147, all passing |
+| `chaoslib` tests | 158, all passing |
 
 **Next chapters, in priority order** — each already has most of its material in hand:
 
-1. **Ch. 8** (dimension) — `chaoslib.dimension` is tested, and chapter 7 already
-   promises that chapter's independent check of $D_{KY}$.
-2. **Ch. 12** (scale-dependent error growth) — `chaoslib.spatial` landed with chapter
+1. **Ch. 12** (scale-dependent error growth) — `chaoslib.spatial` landed with chapter
    11, which is most of what this needs beyond the multiscale Lorenz 2005 system.
+2. **Ch. 9** (error growth past the linear regime) — `chaoslib.errorgrowth` is tested,
+   and chapters 6 and 8 both now point at it.
 3. **Ch. 18/19** (variational and ensemble DA) — chapter 20 currently carries their
    theory sections; see the note below.
 
