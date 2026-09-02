@@ -31,6 +31,9 @@ __all__ = [
     "lorenz96_uniform_state",
     "lorenz96_dispersion",
     "lorenz96_critical_forcing",
+    "lorenz96_two_scale",
+    "lorenz96_two_scale_split",
+    "lorenz96_two_scale_state",
     "pendulum",
     "pendulum_energy",
     "pendulum_period_exact",
@@ -260,6 +263,113 @@ def lorenz96_critical_forcing(n: int = 40) -> tuple[float, int]:
     gain = np.cos(theta) - np.cos(2.0 * theta)
     best = int(np.argmax(gain))
     return float(1.0 / gain[best]), int(m[best])
+
+
+def lorenz96_two_scale(
+    t: float,
+    state: Array,
+    n_slow: int = 8,
+    n_fast: int = 32,
+    forcing: float = 20.0,
+    coupling: float = 1.0,
+    amplitude_ratio: float = 10.0,
+    time_ratio: float = 10.0,
+) -> Array:
+    r"""Two-scale Lorenz 96: slow variables coupled to a fast subsystem.
+
+    .. math::
+        \frac{dX_k}{dt} &= X_{k-1}(X_{k+1} - X_{k-2}) - X_k + F
+                           - \frac{hc}{b}\sum_{j\in k} Y_{j}, \\
+        \frac{dY_j}{dt} &= cb\,Y_{j+1}(Y_{j-1} - Y_{j+2}) - cY_j
+                           + \frac{hc}{b}X_{k(j)} .
+
+    The state is ``concatenate([X, Y])`` with ``X`` of length ``n_slow`` and
+    ``Y`` of length ``n_slow * n_fast``, the fast variables forming a single
+    cyclic chain with ``n_fast`` of them attached to each slow variable. Leading
+    axes are ensemble members, as everywhere else in this module.
+
+    ``time_ratio`` (:math:`c`) makes the fast subsystem :math:`c` times faster
+    and ``amplitude_ratio`` (:math:`b`) makes it :math:`b` times smaller;
+    ``coupling`` (:math:`h`) sets the strength of the exchange. The conventional
+    values are :math:`h=1, b=c=10` with :math:`F=20`
+    *[citation needed: Lorenz (1996); Wilks (2005)]*.
+
+    **What this model is and is not for.** It is the standard testbed for
+    assimilation with unresolved scales, and it demonstrates the *mechanism* of
+    an upscale error cascade: perturb only :math:`Y` and the error appears in
+    :math:`X` shortly afterwards, growing at a rate set by the slow dynamics
+    (2.96--2.99 per time unit) that is **independent of how small the fast
+    perturbation was**, across eight decades of it.
+
+    It does **not** exhibit Lorenz's finite predictability limit, and chapter 12
+    measures how completely it fails to. Averaged over 32 base states, the time
+    for the slow error to reach a tenth of saturation improves by 0.145 time
+    units per decade of initial-error reduction when the error is seeded in the
+    fast variables, against 0.148 when it is seeded in the slow ones -- a 2 %
+    difference, so it makes essentially no difference *where* the error is put.
+    A finite limit needs a *spectrum* of scales, not two rungs of one, which is
+    what :func:`chaoslib.errorgrowth.cascade_growth` supplies. Worth stating
+    plainly, because this model is widely used and easily over-read.
+
+    One property to know before quoting any Lyapunov exponent of it: the leading
+    exponent of the coupled system is set by the **fast** subsystem -- measured
+    24.7 per time unit at the conventional parameters, a doubling time of 0.028
+    time units -- while the slow variables' error actually doubles every 0.232.
+    So :math:`\lambda_1` overstates large-scale error growth by a factor of 8.3,
+    and in a multiscale system it and the predictability of the large scales are
+    different questions.
+
+    With ``coupling=0`` the :math:`X` equations reduce **exactly** to
+    :func:`lorenz96`, which is what the tests check.
+    """
+    x = np.asarray(state, dtype=float)[..., :n_slow]
+    y = np.asarray(state, dtype=float)[..., n_slow:]
+    exchange = coupling * time_ratio / amplitude_ratio
+    fast_sum = y.reshape(*y.shape[:-1], n_slow, n_fast).sum(axis=-1)
+    dx = (
+        np.roll(x, 1, axis=-1)
+        * (np.roll(x, -1, axis=-1) - np.roll(x, 2, axis=-1))
+        - x
+        + forcing
+        - exchange * fast_sum
+    )
+    dy = (
+        -time_ratio * amplitude_ratio
+        * np.roll(y, -1, axis=-1)
+        * (np.roll(y, -2, axis=-1) - np.roll(y, 1, axis=-1))
+        - time_ratio * y
+        + exchange * np.repeat(x, n_fast, axis=-1)
+    )
+    return np.concatenate([dx, dy], axis=-1)
+
+
+def lorenz96_two_scale_split(
+    state: Array, n_slow: int = 8
+) -> tuple[Array, Array]:
+    """Split a two-scale state into its slow and fast parts.
+
+    Returns ``(X, Y)`` as views on the trailing axis, so it works on a single
+    state, an ensemble, or a trajectory with time on the leading axis.
+    """
+    arr = np.asarray(state, dtype=float)
+    return arr[..., :n_slow], arr[..., n_slow:]
+
+
+def lorenz96_two_scale_state(
+    n_slow: int = 8,
+    n_fast: int = 32,
+    forcing: float = 20.0,
+    seed: int | None = 0,
+) -> Array:
+    """A starting state for :func:`lorenz96_two_scale`: uniform slow plus noise.
+
+    Needs a long spin-up -- the fast subsystem is the stiff part, so a step of
+    :math:`10^{-3}` and 30 time units is the working recipe.
+    """
+    rng = np.random.default_rng(seed)
+    slow = float(forcing) * np.ones(int(n_slow)) + rng.normal(0.0, 0.1, int(n_slow))
+    fast = rng.normal(0.0, 0.1, int(n_slow) * int(n_fast))
+    return np.concatenate([slow, fast])
 
 
 # --------------------------------------------------------------------------

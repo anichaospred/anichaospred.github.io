@@ -24,6 +24,17 @@ on the leading axis**; information-theoretic quantities are in **nats**; symbols
 | `double_pendulum`, `double_pendulum_energy` | full Euler–Lagrange equations |
 | `logistic_map(x, r)`, `henon_map(xy, a, b)` | discrete maps |
 
+
+`lorenz96_two_scale` couples `n_slow` slow variables to `n_slow * n_fast` fast ones that
+move `time_ratio` times quicker and carry `1/amplitude_ratio` the amplitude, with
+`lorenz96_two_scale_split` / `_state` as helpers. Two exact identities pin it: with
+`coupling=0` the slow equations are **identically** `lorenz96`, and the coupling
+conserves $\tfrac12(\sum X^2 + \sum Y^2)$.
+
+Read chapter 12 before drawing conclusions from it. It shows the upscale-cascade
+mechanism, but its leading Lyapunov exponent (24.7 per time unit) belongs to the fast
+subsystem and overstates large-scale error growth by 8.3×, and it does **not** exhibit
+Lorenz's finite predictability limit — that needs a spectrum of scales, not two.
 ## `integrate` — time stepping
 
 | Function | Use it for |
@@ -90,11 +101,23 @@ which is exactly the operationally relevant case.
 Tested against the closed-form Gaussian CRPS, and against the calibration identity
 that a reliable ensemble has RMS spread equal to the RMS error of its mean.
 
-## `errorgrowth` — saturation
+## `errorgrowth` — saturation and the upscale cascade
 
 `logistic_error_growth`, `fit_logistic_error_growth`, `saturation_level` (RMS distance
 between random state pairs — i.e. the error of a climatological forecast),
 `predictability_horizon`.
+
+`cascade_rates`, `cascade_growth`, `cascade_contamination_time`, `KOLMOGOROV_ALPHA`
+add Lorenz's (1969) octave-band model: band $n$ has growth rate
+$\lambda_0 2^{\alpha n}$ and is forced by the band one octave smaller. With one band it
+reduces exactly to `logistic_error_growth`.
+
+The parameter that matters is $\alpha$. Seeding the finest *resolved* band at saturation
+and adding octaves — which is what improving an observing system's resolution means —
+the contamination time of the largest scale **converges for $\alpha > 0$** and
+**diverges for $\alpha = 0$**. Lorenz 63 and Lorenz 96 are $\alpha = 0$ systems, which
+is why nothing before chapter 12 could raise the question. The per-octave gain falls as
+$2^{-2\alpha}$, the square of what $\sum_n \lambda_n^{-1}$ predicts.
 
 ## `dimension` — dimension from a trajectory
 
