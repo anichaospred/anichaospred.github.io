@@ -145,11 +145,14 @@ start and no link is dead.
     1.18 MTU per e-fold of $\delta_0$ against $1/\lambda_1 = 1.10$. Closes with the two
     tests that tell you an adjoint is correct, and the three bugs they caught in this
     book's own library. *Knob:* $\tau$, amplitude.
-16. **Adjoint sensitivity and optimal perturbations** — Singular vectors vs. Lyapunov
-    vectors; sensitivity to the initial state and to observations; targeted observing.
-    *Notebook:* the leading singular vector of L63/L96 over a chosen window, and the
-    amplification it achieves against the Lyapunov estimate. *Knob:* optimisation
-    time.
+16. ★ **Adjoint sensitivity and optimal perturbations** — Singular vectors, and how
+    they differ from both the gradient and the Lyapunov vectors. Optimal growth beats
+    $e^{\lambda_1\tau}$ by 1.6–2.6× at every window tested (averaged over the attractor
+    — at a single base point $\sigma_1(\tau)$ is not even monotonic).
+    "Fastest-growing" is undefined without a norm, and changing the norm rotates the
+    answer by tens of degrees. Sensitivity and growth nearly coincide in Lorenz 63,
+    where one singular value dominates, and are 89° apart in Lorenz 96 — a reminder of
+    what a three-variable model cannot show. *Knob:* optimisation window, the norm.
 17. **Probabilistic forecast design** — Ensemble construction (singular vectors, bred
     vectors, EDA); reliability; CRPS, Brier score, rank histograms; the value of a
     probabilistic forecast to a decision. *Notebook:* build an ensemble three ways and
@@ -274,21 +277,18 @@ Pyodide build every reader's browser receives.
 
 | | Count |
 |---|---|
-| Chapters live | **5** (4, 6, 7, 15, 20) |
-| Chapters stubbed | 26 |
+| Chapters live | **6** (4, 6, 7, 15, 16, 20) |
+| Chapters stubbed | 25 |
 | `chaoslib` modules | 10 |
-| `chaoslib` tests | 109, all passing |
+| `chaoslib` tests | 116, all passing |
 
 **Next chapters, in priority order** — each already has most of its material in hand:
 
-1. **Ch. 16** (adjoint sensitivity and singular vectors) — `chaoslib.adjoint` already
-   provides them, and chapter 15 now sets up the distinction between *sensitivity* and
-   *growth* that chapter 16 exists to resolve.
-2. **Ch. 5** (maps and bifurcations) — small, self-contained, no new library code.
-3. **Ch. 11** (Lorenz 96) — `chaoslib.systems.lorenz96` and the spectrum are tested.
-4. **Ch. 8** (dimension) — `chaoslib.dimension` is tested, and chapter 7 already
+1. **Ch. 5** (maps and bifurcations) — small, self-contained, no new library code.
+2. **Ch. 11** (Lorenz 96) — `chaoslib.systems.lorenz96` and the spectrum are tested.
+3. **Ch. 8** (dimension) — `chaoslib.dimension` is tested, and chapter 7 already
    promises that chapter's independent check of $D_{KY}$.
-5. **Ch. 18/19** (variational and ensemble DA) — chapter 20 currently carries their
+4. **Ch. 18/19** (variational and ensemble DA) — chapter 20 currently carries their
    theory sections; see the note below.
 
 ### A second decision on record: splitting chapter 20
