@@ -34,6 +34,11 @@ __all__ = [
     "double_pendulum",
     "double_pendulum_energy",
     "logistic_map",
+    "logistic_map_derivative",
+    "sine_map",
+    "sine_map_derivative",
+    "cubic_map",
+    "cubic_map_derivative",
     "henon_map",
 ]
 
@@ -308,6 +313,56 @@ def logistic_map(x: Array, r: float = 3.9) -> Array:
     """
     x = np.asarray(x, dtype=float)
     return r * x * (1.0 - x)
+
+
+def logistic_map_derivative(x: Array, r: float = 3.9) -> Array:
+    r"""Derivative :math:`f'(x) = r(1 - 2x)` of the logistic map.
+
+    Needed for the map Lyapunov exponent :math:`\lambda = \langle\ln|f'|\rangle`
+    and for cycle multipliers. Note :math:`f'(1/2) = 0`: the critical point is
+    where a cycle becomes *superstable*.
+    """
+    x = np.asarray(x, dtype=float)
+    return r * (1.0 - 2.0 * x)
+
+
+def sine_map(x: Array, r: float = 0.9) -> Array:
+    r"""Sine map :math:`x_{n+1} = r\sin(\pi x_n)` on :math:`[0,1]`.
+
+    A unimodal map of a completely different functional form from the logistic
+    map, with a different critical exponent structure at the origin -- and
+    therefore a genuinely independent test of Feigenbaum universality. Its own
+    cascade parameters are unrelated to the logistic map's
+    (:math:`R_0 = 1/2` against :math:`R_0 = 2`), yet the *ratios* of successive
+    cascade spacings converge to the same :math:`\delta`. Chaotic for
+    :math:`r \gtrsim 0.8655`; the map leaves :math:`[0,1]` for :math:`r > 1`.
+    """
+    x = np.asarray(x, dtype=float)
+    return r * np.sin(np.pi * x)
+
+
+def sine_map_derivative(x: Array, r: float = 0.9) -> Array:
+    r"""Derivative :math:`f'(x) = \pi r\cos(\pi x)` of the sine map."""
+    x = np.asarray(x, dtype=float)
+    return np.pi * r * np.cos(np.pi * x)
+
+
+def cubic_map(x: Array, r: float = 2.3) -> Array:
+    r"""Cubic map :math:`x_{n+1} = r\,x_n(1 - x_n^2)` on :math:`[0,1]`.
+
+    A third unimodal family, included for the same reason as
+    :func:`sine_map`: universality is a claim about a *class* of maps, and one
+    example cannot demonstrate it. Its critical point is at
+    :math:`x_c = 1/\sqrt{3}`, not :math:`1/2`.
+    """
+    x = np.asarray(x, dtype=float)
+    return r * x * (1.0 - x * x)
+
+
+def cubic_map_derivative(x: Array, r: float = 2.3) -> Array:
+    r"""Derivative :math:`f'(x) = r(1 - 3x^2)` of the cubic map."""
+    x = np.asarray(x, dtype=float)
+    return r * (1.0 - 3.0 * x * x)
 
 
 def henon_map(xy: Array, a: float = 1.4, b: float = 0.3) -> Array:

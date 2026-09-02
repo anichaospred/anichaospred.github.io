@@ -105,6 +105,34 @@ Two traps, both of which bias $D_2$ **low** and neither of which announces itsel
 defaults) and **temporal correlation** (use `theiler`, or subsample in time). Always
 look at `local_slopes` before quoting a number; a real fractal shows a plateau.
 
+## `maps` — bifurcations and universality in 1-D maps
+
+`map_orbit`, `cobweb_path`, `bifurcation_points`, `map_lyapunov_exponent`, `iterate_n`,
+`superstable_cascade`, `feigenbaum_ratios`, `cycle_multiplier`, `period_three_threshold`,
+`laminar_phases`, `FEIGENBAUM_DELTA`.
+
+`bifurcation_points` and `map_lyapunov_exponent` are **vectorised over the parameter
+axis**: a 1400-point sweep costs the same number of NumPy operations as one parameter,
+which is why chapter 5 computes almost everything live rather than precomputing it.
+
+Two things to know before using `superstable_cascade`:
+
+- it locates **superstable** parameters ($f_r^{p2^n}(x_c) = x_c$, multiplier exactly
+  zero), **not** bifurcation parameters. Bifurcation parameters need a marginal
+  condition detected inside a basin shrinking like $\delta^{-n}$; superstable
+  parameters need plain iteration from a known $x_c$. Same limit, same $\delta$;
+- `r_hi` must not exceed the accumulation point by much. Above it, $g_n$ acquires
+  further roots inside the periodic windows of the chaotic band and the scan can bracket
+  the wrong one. Bracketing is the whole difficulty here — $g_n$ vanishes at *every*
+  $R_k$ with $k \le n$, so the function takes the **first** sign change above
+  $R_{n-1}$, predicted by extrapolating the previous spacing.
+
+`base_period=3` follows a periodic window's own cascade, which is how chapter 5 turns
+the self-similarity of the bifurcation diagram from an observation into a measurement.
+
+`map_lyapunov_exponent` clips the per-iteration $\ln|f'|$ at `floor` because a
+superstable parameter gives a genuine $-\infty$, not an artefact.
+
 ## `information` — predictability as information
 
 `shannon_entropy`, `relative_entropy`, `mutual_information`, `predictive_information`,
