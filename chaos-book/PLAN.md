@@ -137,11 +137,14 @@ start and no link is dead.
 
 ### Part V — The machinery of prediction
 
-15. **Tangent linear and adjoint models** — Linearisation; the adjoint identity
-    $\langle \mathbf{M}x, y\rangle = \langle x, \mathbf{M}^{\!\top}y\rangle$; the
-    window of validity. *Notebook:* the finite-difference validation curve — the
-    reader watches the discrepancy fall linearly in the perturbation amplitude, the
-    defining test of a correct tangent linear model. *Knob:* $\tau$, amplitude.
+15. ★ **Tangent linear and adjoint models** — Linearisation of the *discrete* model;
+    the adjoint identity
+    $\langle \mathbf{M}x, y\rangle = \langle x, \mathbf{M}^{\!\top}y\rangle$; and the
+    gradient of a forecast metric at a cost independent of state dimension. The window
+    of validity obeys the same logarithmic law as everything else — measured at
+    1.18 MTU per e-fold of $\delta_0$ against $1/\lambda_1 = 1.10$. Closes with the two
+    tests that tell you an adjoint is correct, and the three bugs they caught in this
+    book's own library. *Knob:* $\tau$, amplitude.
 16. **Adjoint sensitivity and optimal perturbations** — Singular vectors vs. Lyapunov
     vectors; sensitivity to the initial state and to observations; targeted observing.
     *Notebook:* the leading singular vector of L63/L96 over a chosen window, and the
@@ -271,16 +274,16 @@ Pyodide build every reader's browser receives.
 
 | | Count |
 |---|---|
-| Chapters live | **4** (4, 6, 7, 20) |
-| Chapters stubbed | 27 |
+| Chapters live | **5** (4, 6, 7, 15, 20) |
+| Chapters stubbed | 26 |
 | `chaoslib` modules | 10 |
 | `chaoslib` tests | 109, all passing |
 
 **Next chapters, in priority order** — each already has most of its material in hand:
 
-1. **Ch. 15** (tangent linear and adjoint) — `chaoslib.adjoint` is complete and
-   tested, including the finite-difference validation curve the chapter is built on,
-   and chapter 20 already depends on it conceptually.
+1. **Ch. 16** (adjoint sensitivity and singular vectors) — `chaoslib.adjoint` already
+   provides them, and chapter 15 now sets up the distinction between *sensitivity* and
+   *growth* that chapter 16 exists to resolve.
 2. **Ch. 5** (maps and bifurcations) — small, self-contained, no new library code.
 3. **Ch. 11** (Lorenz 96) — `chaoslib.systems.lorenz96` and the spectrum are tested.
 4. **Ch. 8** (dimension) — `chaoslib.dimension` is tested, and chapter 7 already
