@@ -2019,3 +2019,239 @@ def test_the_named_colourmaps_exist_and_have_the_right_character():
     # A sequential map is monotone in luminance, so magnitude reads as darkness.
     values = [luminance(sequential, x) for x in np.linspace(0.0, 1.0, 9)]
     assert all(a < b for a, b in zip(values, values[1:])), values
+
+
+# ==========================================================================
+# dimension: box counting against closed-form dimensions
+# ==========================================================================
+def test_reference_sets_have_the_dimensions_they_claim():
+    """Box counting recovers three exactly known dimensions.
+
+    These are the only dimension checks in the suite that compare against an
+    exact number rather than a literature estimate, which makes them the
+    calibration for everything else in the module:
+    ln2/ln3, ln4/ln3 and ln3/ln2.
+    """
+    builders = {
+        "cantor": lambda: dimension.cantor_set(200_000, 18, seed=0),
+        "koch": lambda: dimension.koch_curve(8),
+        "sierpinski": lambda: dimension.sierpinski_triangle(200_000, 24, seed=1),
+    }
+    for name, build in builders.items():
+        exact = dimension.REFERENCE_DIMENSIONS[name]
+        window = dimension.REFERENCE_WINDOWS[name]
+        estimate, _, _, _ = dimension.renyi_dimension(
+            build(), q=0.0, fit_range=window, n_scales=14
+        )
+        assert estimate == pytest.approx(exact, abs=0.02), (
+            f"{name}: D_0 = {estimate:.4f} against exact {exact:.4f}"
+        )
+
+
+def test_box_counting_saturates_when_the_sample_runs_out():
+    """The trap the occupancy return exists to expose.
+
+    Below about 20 points per box the measured slope collapses toward zero: at
+    one point per box the box count equals the sample size and stops responding
+    to the scale at all. Asserting the *collapse* rather than merely a wrong
+    number pins the mechanism.
+    """
+    points = dimension.sierpinski_triangle(200_000, 24, seed=2)
+    exact = dimension.REFERENCE_DIMENSIONS["sierpinski"]
+
+    good, _, _, occupancy_good = dimension.renyi_dimension(
+        points, q=0.0, fit_range=dimension.REFERENCE_WINDOWS["sierpinski"], n_scales=10
+    )
+    assert occupancy_good.min() > dimension.MIN_BOX_OCCUPANCY
+    assert good == pytest.approx(exact, abs=0.05)
+
+    starved, _, _, occupancy_bad = dimension.renyi_dimension(
+        points, q=0.0, fit_range=(1e-5, 1e-3), n_scales=10
+    )
+    assert occupancy_bad.max() < 3.0, occupancy_bad
+    assert starved < 0.55 * exact, f"expected collapse, got {starved:.3f}"
+
+
+def test_renyi_dimensions_separate_and_order_on_a_multifractal():
+    """D_0 >= D_1 >= D_2, with D_1 and D_2 against their closed forms.
+
+    The inequality is exact only in the limit, so it cannot be tested on a
+    *uniform* measure: there the three coincide and finite-scale estimation
+    noise of ~0.008 reorders them at will (measured 1.5835, 1.5904, 1.5858 on
+    the unweighted triangle -- ordered incorrectly, and not a bug).
+
+    Skewing the chaos-game weights separates them by 0.28, which is well clear
+    of that noise, and for contraction ratio 1/2 supplies exact targets:
+    D_1 = -sum p ln p / ln 2 and D_2 = -ln(sum p^2) / ln 2.
+    """
+    probabilities = np.array([0.6, 0.2, 0.2])
+    points = dimension.sierpinski_triangle(
+        250_000, 24, seed=3, probabilities=probabilities
+    )
+    spectrum = dimension.renyi_spectrum(
+        points,
+        q_values=(0.0, 1.0, 2.0),
+        fit_range=dimension.REFERENCE_WINDOWS["sierpinski"],
+        n_scales=14,
+    )
+    assert np.all(np.diff(spectrum) < 0.0), spectrum
+    assert spectrum[0] - spectrum[2] > 0.2, spectrum
+
+    d1_exact = -(probabilities * np.log(probabilities)).sum() / np.log(2.0)
+    d2_exact = -np.log((probabilities**2).sum()) / np.log(2.0)
+    assert spectrum[1] == pytest.approx(d1_exact, abs=0.09), (spectrum[1], d1_exact)
+    assert spectrum[2] == pytest.approx(d2_exact, abs=0.09), (spectrum[2], d2_exact)
+
+
+def test_renyi_dimension_of_a_uniform_square_is_two():
+    """A control with no fractal structure: D_q = 2 for every q.
+
+    The residual deficit is the O(eps) edge bias documented on
+    renyi_dimension: the unit-box grid lays down (1/eps + 1)^d boxes, not
+    eps^-d, so a fixed window converges on the (1/eps+1)^2 prediction rather
+    than on 2. Hence the one-sided tolerance -- the estimate should be a little
+    *low*, never high.
+    """
+    rng = np.random.default_rng(7)
+    points = rng.uniform(0.0, 1.0, size=(200_000, 2))
+    for q in (0.0, 1.0, 2.0):
+        estimate, _, _, occupancy = dimension.renyi_dimension(
+            points, q=q, fit_range=(0.008, 0.06), n_scales=9
+        )
+        assert occupancy.min() > dimension.MIN_BOX_OCCUPANCY
+        assert 1.94 < estimate < 2.01, f"q={q}: {estimate}"
+
+
+def test_box_occupancy_counts_every_point_exactly_once():
+    """A partition, so the occupancies must sum to the sample size."""
+    points = dimension.sierpinski_triangle(20_000, 20, seed=4)
+    for scale in (0.5, 0.1, 0.02):
+        counts = dimension.box_occupancy(points, scale)
+        assert counts.sum() == points.shape[0]
+        assert np.all(counts >= 1)
+
+
+# ==========================================================================
+# dimension: fitting a window, and embedding from one variable
+# ==========================================================================
+def test_fit_dimension_recovers_a_planted_power_law():
+    """C(r) = r^D exactly, so the fitted slope must be D to round-off."""
+    radii = np.logspace(-3.0, -1.0, 40)
+    for exponent in (0.7, 1.26, 2.06, 3.0):
+        c = radii**exponent
+        slope, used = dimension.fit_dimension(radii, c, (1e-3, 1e-1))
+        assert slope == pytest.approx(exponent, rel=1e-10)
+        assert used == radii.size
+
+
+def test_fit_dimension_rejects_a_window_with_too_few_radii():
+    radii = np.logspace(-3.0, -1.0, 40)
+    with pytest.raises(ValueError, match="usable radii"):
+        dimension.fit_dimension(radii, radii**2.0, (1.5e-3, 1.6e-3))
+
+
+def test_delay_embedding_reconstructs_the_geometry():
+    """Takens: an embedding of one observed variable has the same dimension.
+
+    D_2 measured on the x component alone rises with the embedding dimension
+    and saturates near the full-state value once m is large enough to hold the
+    set. That saturation is the only available diagnostic for choosing m, since
+    the criterion m > 2D needs the D one is trying to measure.
+    """
+    grid = integrate.trajectory_grid(t_final=400.0, dt=0.01)
+    trajectory = integrate.rk4(
+        systems.lorenz63, np.array([1.0, 1.0, 20.0]), grid
+    )[3000:]
+
+    full, _, _ = dimension.correlation_dimension(
+        trajectory, theiler=50, max_points=3000
+    )
+
+    estimates = []
+    for embedding_dimension in (2, 3, 5):
+        embedded = dimension.delay_embed(trajectory[:, 0], embedding_dimension, 20)
+        value, _, _ = dimension.correlation_dimension(
+            embedded, theiler=50, max_points=3000
+        )
+        estimates.append(value)
+
+    # Too small an embedding caps the estimate well below the truth.
+    assert estimates[0] < full - 0.25, estimates
+    # A large enough one recovers it.
+    assert estimates[2] == pytest.approx(full, abs=0.15), (estimates, full)
+    # And the approach is from below.
+    assert estimates[0] < estimates[1] < estimates[2] + 0.05, estimates
+
+
+def test_delay_embed_shape_and_contents():
+    series = np.arange(20.0)
+    embedded = dimension.delay_embed(series, 3, 4)
+    assert embedded.shape == (20 - 2 * 4, 3)
+    assert embedded[0] == pytest.approx([0.0, 4.0, 8.0])
+    assert embedded[-1] == pytest.approx([11.0, 15.0, 19.0])
+    with pytest.raises(ValueError):
+        dimension.delay_embed(series, 3, 0)
+    with pytest.raises(ValueError, match="too short"):
+        dimension.delay_embed(series, 10, 5)
+
+
+def test_theiler_window_removes_a_high_bias_from_dense_sampling():
+    """The temporal-correlation trap, with its sign pinned.
+
+    Sampled at dt = 0.01 the Lorenz 63 trajectory moves about 1.3% of the
+    attractor's diameter per step -- inside the default fit window -- so the
+    excess of temporally adjacent pairs puts a bump in C(r) right there and
+    biases D_2 *high*. Widening the Theiler window monotonically removes it.
+
+    Worth asserting the direction rather than just "the estimates differ",
+    because the textbook warning about temporal correlation is usually stated
+    as a bias toward low dimension, which is what happens when the sampling is
+    dense enough to put the step scale *below* the window instead.
+    """
+    grid = integrate.trajectory_grid(t_final=75.0, dt=0.01)
+    trajectory = integrate.rk4(
+        systems.lorenz63, np.array([1.0, 1.0, 20.0]), grid
+    )[3000:]
+    # Densely sampled on purpose: no subsampling happens at this length.
+    assert trajectory.shape[0] < 4600
+
+    estimates = [
+        dimension.correlation_dimension(trajectory, theiler=w, max_points=4000)[0]
+        for w in (0, 10, 50, 200)
+    ]
+    assert estimates[0] > 2.10, estimates          # clearly biased high
+    assert estimates[-1] == pytest.approx(2.05, abs=0.05), estimates
+    assert all(a > b for a, b in zip(estimates, estimates[1:])), estimates
+
+
+def test_a_badly_chosen_scaling_window_returns_a_confident_wrong_answer():
+    """Both signs of error, from the same curve.
+
+    The point is not that the numbers are wrong but that nothing in the return
+    value indicates it: each of these is a clean least-squares fit with a small
+    residual over a dozen radii.
+    """
+    grid = integrate.trajectory_grid(t_final=800.0, dt=0.01)
+    trajectory = integrate.rk4(
+        systems.lorenz63, np.array([1.0, 1.0, 20.0]), grid
+    )[3000:]
+    stride = max(1, trajectory.shape[0] // 4000)
+    prepared = trajectory[::stride][:4000]
+    diameter = float(
+        np.sqrt(((prepared.max(axis=0) - prepared.min(axis=0)) ** 2).sum())
+    )
+    radii = np.logspace(
+        np.log10(3e-4 * diameter), np.log10(1.2 * diameter), 60
+    )
+    c = dimension.correlation_sum(trajectory, radii, theiler=50, max_points=4000)
+
+    good, _ = dimension.fit_dimension(radii, c, (0.008 * diameter, 0.05 * diameter))
+    saturated, _ = dimension.fit_dimension(radii, c, (0.3 * diameter, 1.2 * diameter))
+    noisy, _ = dimension.fit_dimension(radii, c, (3e-4 * diameter, 2e-3 * diameter))
+    everything, _ = dimension.fit_dimension(radii, c, (3e-4 * diameter, 1.2 * diameter))
+
+    assert good == pytest.approx(2.06, abs=0.05)
+    assert saturated < 0.4, saturated            # C -> 1: slope collapses
+    assert noisy > 2.35, noisy                   # quantised counts: slope steepens
+    # The most dangerous case: wrong, but not obviously so.
+    assert 1.8 < everything < 2.0, everything

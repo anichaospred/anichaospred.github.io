@@ -98,12 +98,51 @@ between random state pairs — i.e. the error of a climatological forecast),
 
 ## `dimension` — dimension from a trajectory
 
-`correlation_sum`, `correlation_dimension`, `local_slopes`.
+`correlation_sum`, `correlation_dimension`, `local_slopes`, `fit_dimension`,
+`box_occupancy`, `renyi_dimension`, `renyi_spectrum`, `delay_embed`, plus the reference
+sets `cantor_set`, `koch_curve`, `sierpinski_triangle` and the constants
+`REFERENCE_DIMENSIONS`, `REFERENCE_WINDOWS`, `MIN_BOX_OCCUPANCY`.
 
-Two traps, both of which bias $D_2$ **low** and neither of which announces itself: the
-**scaling window** (for L63 it is roughly 1–5 % of the attractor diameter — the
-defaults) and **temporal correlation** (use `theiler`, or subsample in time). Always
-look at `local_slopes` before quoting a number; a real fractal shows a plateau.
+Two traps, neither of which announces itself, and — measured rather than assumed —
+**either sign of error is available**, which is why neither can be corrected for
+afterwards:
+
+- the **scaling window**. On the same L63 curve, fitting above 30 % of the attractor
+  diameter gives 0.19, below 0.2 % gives 2.51, the whole range gives 1.92, and the
+  window that works (1–5 %, the defaults) gives 2.057;
+- **temporal correlation**. The excess of adjacent pairs is a *bump* in $C(r)$ at the
+  distance the trajectory covers per sample. For L63 at $\Delta t = 0.01$ that lands
+  inside the fit window and biases $D_2$ **high** (2.139 at `theiler=0` against 2.039 at
+  `theiler=200`); sample densely enough to put it below the window and you get the
+  classic low bias instead.
+
+Always look at `local_slopes` before quoting a number.
+
+`fit_dimension` exists because the two halves of a dimension estimate have wildly
+different costs: forming $C(r)$ is $O(N^2)$ and knob-free, re-fitting a window on a
+stored curve is microseconds. A chapter with a scaling-window slider computes the curve
+once and calls `fit_dimension` on every drag.
+
+`renyi_dimension` gives $D_q$ by box counting ($q=0$ box-counting, $q=1$ information,
+$q=2$ correlation; $D_0 \ge D_1 \ge D_2$ always). It returns the mean **occupancy** per
+scale, because that is what decides whether the answer means anything: below about ten
+points per box the estimate measures the sample rather than the set. In three dimensions
+at achievable sample sizes it starves, which is why `correlation_dimension` — using all
+$N^2/2$ pairs rather than spreading $N$ points over a grid — is the estimator for
+anything real. A second, smaller $O(\varepsilon)$ bias never goes away: the unit-box
+grid lays down $(1/\varepsilon+1)^d$ boxes, not $\varepsilon^{-d}$, so prefer the
+finest window the sample supports.
+
+The reference sets are the module's calibration — Cantor, Koch and Sierpiński have
+dimensions in closed form, so an estimator can be checked against a known answer rather
+than against another estimator. `sierpinski_triangle` takes `probabilities` to skew the
+chaos game, which leaves the support (and $D_0$) alone but makes the measure
+multifractal, separating $D_0 > D_1 > D_2$ and supplying exact targets
+$D_1 = -\sum p\ln p/\ln2$ and $D_2 = -\ln\sum p^2/\ln2$.
+
+`delay_embed` reconstructs an attractor from one scalar series. The criterion
+$m > 2D$ needs the $D$ being measured, so raise $m$ until the estimate saturates — for
+L63's $x$ component it reads 1.72, 1.95, 1.99, 2.00 at $m = 2\ldots5$.
 
 ## `maps` — bifurcations and universality in 1-D maps
 
