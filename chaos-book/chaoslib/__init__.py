@@ -22,6 +22,7 @@ lyapunov     Lyapunov spectra, finite-time exponents, doubling times, dimension
 errorgrowth  saturation and the logistic error-growth model
 dimension    fractal dimension estimated from a sampled trajectory
 information  entropy, relative entropy and mutual information as predictability
+maps         bifurcation cascades, Feigenbaum universality, map Lyapunov exponents
 adjoint      tangent-linear and adjoint propagators; singular vectors
 assimilate   3D-Var, 4D-Var, Kalman filter and EnKF on the low-order models
 ensemble     ensemble construction and probabilistic verification scores
@@ -45,6 +46,7 @@ from chaoslib import (
     information,
     integrate,
     lyapunov,
+    maps,
     plotting,
     systems,
 )
@@ -63,6 +65,7 @@ __all__ = [
     "information",
     "integrate",
     "lyapunov",
+    "maps",
     "plotting",
     "systems",
     "__version__",

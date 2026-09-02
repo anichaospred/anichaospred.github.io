@@ -84,10 +84,15 @@ start and no link is dead.
    Degrees of freedom, phase-space dimension, Poincaré–Bendixson; why the *exact*
    nonlinear pendulum is still perfectly predictable, and what changes when a second
    rod is added. *Knob:* $\theta_0$, $\delta_0$.
-5. **Maps, bifurcations, and the routes to chaos** — The logistic map, period
-   doubling, the Feigenbaum constant, intermittency; regime transitions as
-   bifurcations. *Notebook:* cobweb plot beside a live bifurcation diagram, with the
-   measured $\delta$. *Knob:* $r$.
+5. ★ **Maps, bifurcations, and the routes to chaos** — Cobweb stability, the
+   bifurcation diagram with $\lambda(r)$ beneath it, and $\delta$ measured rather
+   than quoted: three unrelated unimodal families (logistic, sine, cubic) give
+   4.669191, 4.664075, 4.669038. The period-3 window's own $3\cdot 2^n$ cascade gives
+   the same $\delta$ from a range 90 times narrower, which is the renormalisation
+   structure itself. Type-I intermittency below $r_c = 1+2\sqrt2$ scales as
+   $(r_c-r)^{-0.4965}$ against a predicted $-1/2$ — a regime that ends with no
+   parameter changing, and the origin of critical-slowing-down early warnings.
+   *Knob:* $r$, $x_0$, the parameter window.
 6. ★ **The Lorenz (1963) system: the butterfly** — The Rayleigh–Bénard truncation,
    the three fixed points, the Hopf bifurcation at $\rho_H \approx 24.74$, the strange
    attractor, sensitive dependence, and the first ensemble. *Knob:*
@@ -277,18 +282,17 @@ Pyodide build every reader's browser receives.
 
 | | Count |
 |---|---|
-| Chapters live | **6** (4, 6, 7, 15, 16, 20) |
-| Chapters stubbed | 25 |
+| Chapters live | **7** (4, 5, 6, 7, 15, 16, 20) |
+| Chapters stubbed | 24 |
 | `chaoslib` modules | 10 |
-| `chaoslib` tests | 116, all passing |
+| `chaoslib` tests | 133, all passing |
 
 **Next chapters, in priority order** — each already has most of its material in hand:
 
-1. **Ch. 5** (maps and bifurcations) — small, self-contained, no new library code.
-2. **Ch. 11** (Lorenz 96) — `chaoslib.systems.lorenz96` and the spectrum are tested.
-3. **Ch. 8** (dimension) — `chaoslib.dimension` is tested, and chapter 7 already
+1. **Ch. 11** (Lorenz 96) — `chaoslib.systems.lorenz96` and the spectrum are tested.
+2. **Ch. 8** (dimension) — `chaoslib.dimension` is tested, and chapter 7 already
    promises that chapter's independent check of $D_{KY}$.
-4. **Ch. 18/19** (variational and ensemble DA) — chapter 20 currently carries their
+3. **Ch. 18/19** (variational and ensemble DA) — chapter 20 currently carries their
    theory sections; see the note below.
 
 ### A second decision on record: splitting chapter 20

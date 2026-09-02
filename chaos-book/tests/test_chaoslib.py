@@ -33,6 +33,7 @@ from chaoslib import (
     information,
     integrate,
     lyapunov,
+    maps,
     plotting,
     systems,
 )
@@ -1413,3 +1414,319 @@ def test_every_exported_palette_name_exists():
     """__all__ is the contract chapters import against."""
     for name in plotting.__all__:
         assert hasattr(plotting, name), name
+
+
+# ==========================================================================
+# maps: the period-doubling cascade and Feigenbaum universality
+# ==========================================================================
+# Superstable parameters of the logistic map, i.e. the r at which the
+# 2^n-cycle contains the critical point x = 1/2. Published values.
+# *[citation needed: Feigenbaum (1978), table 1]*
+LOGISTIC_SUPERSTABLE = [
+    2.0,
+    3.2360679775,       # exactly 1 + sqrt(5)
+    3.4985616993,
+    3.5546408628,
+    3.5666673799,
+    3.5692435316,
+    3.5697952937,
+    3.5699134654,
+]
+# The accumulation point of the cascade; bracketing must stop below it.
+LOGISTIC_R_INFINITY = 3.5699456720
+
+
+def test_logistic_superstable_cascade_matches_published_values():
+    """Each R_n to 1e-9 -- eight levels, spanning a 4700-fold range of spacings."""
+    cascade = maps.superstable_cascade(
+        systems.logistic_map, 0.5, 1.5, LOGISTIC_R_INFINITY, n_max=7
+    )
+    assert cascade.size == len(LOGISTIC_SUPERSTABLE)
+    for n, (got, want) in enumerate(zip(cascade, LOGISTIC_SUPERSTABLE)):
+        assert abs(got - want) < 1e-9, f"R_{n}: {got!r} != {want!r}"
+    # The first two are exact in closed form.
+    assert cascade[0] == pytest.approx(2.0, abs=1e-13)
+    assert cascade[1] == pytest.approx(1.0 + np.sqrt(5.0), abs=1e-12)
+
+
+def test_superstable_cycles_have_exactly_zero_multiplier():
+    """The defining property, and it holds to the last bit rather than to a tolerance.
+
+    A superstable 2^n-cycle passes through x = 1/2, where f'(1/2) = r(1 - 2*0.5)
+    is *identically* zero in floating point, so the product of multipliers around
+    the cycle is exactly 0.0. This is the strongest available check that
+    superstable_cascade returned cycles rather than nearby parameters.
+    """
+    cascade = maps.superstable_cascade(
+        systems.logistic_map, 0.5, 1.5, LOGISTIC_R_INFINITY, n_max=5
+    )
+    for n, r in enumerate(cascade):
+        multiplier = maps.cycle_multiplier(
+            systems.logistic_map, systems.logistic_map_derivative, 0.5, 2**n, r=r
+        )
+        assert multiplier == 0.0, f"n={n}, r={r}: multiplier {multiplier!r}"
+
+
+def test_feigenbaum_delta_from_the_logistic_cascade():
+    """delta = 4.6692 measured from the map, not quoted."""
+    cascade = maps.superstable_cascade(
+        systems.logistic_map, 0.5, 1.5, LOGISTIC_R_INFINITY, n_max=8
+    )
+    ratios = maps.feigenbaum_ratios(cascade)
+    assert ratios[-1] == pytest.approx(maps.FEIGENBAUM_DELTA, abs=1e-4)
+    # Convergence is monotone from below over the last few levels.
+    assert ratios[-1] > ratios[-2] > ratios[-3]
+
+
+def test_feigenbaum_delta_is_universal_across_unrelated_map_families():
+    """The point of the constant: three different maps, three different cascades,
+    one delta.
+
+    The logistic, sine and cubic families share no algebra -- polynomial versus
+    transcendental, critical point at 1/2 versus 1/sqrt(3), first superstable
+    parameter 2.0 versus 0.5 versus 1.5. If delta were an artefact of the
+    quadratic form of the logistic map, this test would fail.
+    """
+    families = {
+        "logistic": (systems.logistic_map, 0.5, 1.5, LOGISTIC_R_INFINITY, 7),
+        "sine": (systems.sine_map, 0.5, 0.3, 0.8655, 5),
+        "cubic": (systems.cubic_map, 1.0 / np.sqrt(3.0), 1.0, 2.3025, 6),
+    }
+    first_parameters = {}
+    for name, (fmap, xc, lo, hi, n_max) in families.items():
+        cascade = maps.superstable_cascade(fmap, xc, lo, hi, n_max=n_max)
+        assert cascade.size >= 4, f"{name}: only {cascade.size} levels found"
+        first_parameters[name] = cascade[0]
+        estimate = maps.feigenbaum_ratios(cascade)[-1]
+        assert estimate == pytest.approx(maps.FEIGENBAUM_DELTA, abs=6e-3), (
+            f"{name}: delta estimate {estimate:.6f}"
+        )
+    # Confirm the cascades really are different objects, so the agreement above
+    # is universality and not three copies of the same computation.
+    assert first_parameters["logistic"] == pytest.approx(2.0, abs=1e-10)
+    assert first_parameters["sine"] == pytest.approx(0.5, abs=1e-10)
+    assert first_parameters["cubic"] == pytest.approx(1.5, abs=1e-10)
+
+
+def test_bifurcation_points_reproduce_the_analytic_two_cycle():
+    """For 3 < r < 1 + sqrt(6) the attractor is the exact pair
+    x = [(r+1) +- sqrt((r-3)(r+1))] / 2r.
+    """
+    for r in (3.2, 3.3, 3.44):
+        spread = np.sqrt((r - 3.0) * (r + 1.0))
+        expected = np.sort([((r + 1.0) - spread) / (2.0 * r),
+                            ((r + 1.0) + spread) / (2.0 * r)])
+        _, x = maps.bifurcation_points(
+            systems.logistic_map, np.array([r]), n_discard=4000, n_keep=8
+        )
+        found = np.sort(np.unique(np.round(x, 9)))
+        assert found.size == 2, f"r={r}: found {found}"
+        assert found == pytest.approx(expected, abs=1e-9)
+
+
+def test_bifurcation_points_reproduce_the_analytic_fixed_point():
+    """For 1 < r < 3 the only attractor is x* = 1 - 1/r."""
+    for r in (1.8, 2.4, 2.8):
+        _, x = maps.bifurcation_points(
+            systems.logistic_map, np.array([r]), n_discard=4000, n_keep=6
+        )
+        assert x == pytest.approx(1.0 - 1.0 / r, abs=1e-9)
+
+
+# ==========================================================================
+# maps: the Lyapunov exponent of a one-dimensional map
+# ==========================================================================
+def test_map_lyapunov_exponent_is_exactly_ln2_at_r_equals_four():
+    """At r = 4 the logistic map is conjugate to the doubling map x -> 2x mod 1,
+    whose stretching rate is 2 at every point, so lambda = ln 2 exactly.
+    """
+    lam = maps.map_lyapunov_exponent(
+        systems.logistic_map,
+        systems.logistic_map_derivative,
+        np.array([4.0]),
+        n_discard=2000,
+        n_iter=30000,
+    )
+    assert float(lam[0]) == pytest.approx(np.log(2.0), abs=1e-5)
+
+
+def test_map_lyapunov_exponent_vanishes_at_the_first_bifurcation():
+    """At r = 3 the fixed point x* = 2/3 has f'(x*) = r(1 - 2x*) = -1 exactly,
+    so the exponent is zero: the marginal case that separates the two regimes.
+    """
+    lam = maps.map_lyapunov_exponent(
+        systems.logistic_map,
+        systems.logistic_map_derivative,
+        np.array([3.0]),
+        n_discard=200000,
+        n_iter=60000,
+    )
+    assert abs(float(lam[0])) < 1e-4
+
+
+def test_map_lyapunov_exponent_separates_periodic_from_chaotic_parameters():
+    """Sign structure at parameters whose behaviour is known independently.
+
+    r = 3.83 is the critical case: it sits inside the period-3 window, well
+    above the accumulation point r_inf = 3.5699, so a diagram-by-eye reading of
+    "past r_inf, therefore chaotic" gets it wrong. The exponent does not.
+    """
+    periodic = np.array([2.9, 3.2, 3.5, 3.55, 3.83])
+    chaotic = np.array([3.6, 3.7, 3.9, 4.0])
+    lam_p = maps.map_lyapunov_exponent(
+        systems.logistic_map, systems.logistic_map_derivative, periodic, n_iter=8000
+    )
+    lam_c = maps.map_lyapunov_exponent(
+        systems.logistic_map, systems.logistic_map_derivative, chaotic, n_iter=8000
+    )
+    assert np.all(lam_p < -0.05), f"expected negative, got {lam_p}"
+    assert np.all(lam_c > 0.05), f"expected positive, got {lam_c}"
+
+
+def test_map_lyapunov_exponent_floor_keeps_superstable_dips_finite():
+    """At a superstable parameter the orbit hits f' = 0 and the exponent is
+    genuinely -inf. The floor keeps the returned array plottable.
+    """
+    lam = maps.map_lyapunov_exponent(
+        systems.logistic_map,
+        systems.logistic_map_derivative,
+        np.array([2.0]),
+        n_iter=500,
+        floor=-20.0,
+    )
+    assert np.isfinite(lam).all()
+    assert float(lam[0]) == pytest.approx(-20.0, abs=1e-9)
+
+
+# ==========================================================================
+# maps: the tangent bifurcation and type-I intermittency
+# ==========================================================================
+def test_period_three_threshold_is_a_tangency_of_the_third_iterate():
+    """At r_c = 1 + 2 sqrt(2) the third iterate touches the diagonal:
+    f^3(x) = x with (f^3)'(x) = +1, at three points at once.
+
+    A tangency, not a crossing -- which is why this bifurcation cannot be
+    located with a root-finder on f^3(x) - x, and why period_three_threshold is
+    a closed form rather than a search.
+    """
+    r_c = maps.period_three_threshold()
+    assert r_c == pytest.approx(3.8284271247461903, abs=1e-13)
+    for x_star in (0.1599288184, 0.5143552771, 0.9563178420):
+        residual = float(maps.iterate_n(systems.logistic_map, x_star, 3, r=r_c)) - x_star
+        assert abs(residual) < 1e-9, f"x={x_star}: f^3(x)-x = {residual:.2e}"
+        slope = maps.cycle_multiplier(
+            systems.logistic_map, systems.logistic_map_derivative, x_star, 3, r=r_c
+        )
+        assert slope == pytest.approx(1.0, abs=1e-6), f"x={x_star}: (f^3)' = {slope}"
+
+
+def test_period_three_solutions_appear_in_a_pair_at_the_threshold():
+    """Below r_c the only solution of f^3(x) = x is the fixed point; above it
+    there are seven -- the fixed point plus a stable and an unstable 3-cycle,
+    born together. That is the saddle-node signature.
+    """
+    r_c = maps.period_three_threshold()
+    grid = np.linspace(1e-4, 1.0 - 1e-4, 200001)
+
+    def crossings(r):
+        v = maps.iterate_n(systems.logistic_map, grid, 3, r=r) - grid
+        return int(np.count_nonzero(np.sign(v[:-1]) * np.sign(v[1:]) < 0.0))
+
+    assert crossings(r_c - 1e-3) == 1
+    assert crossings(r_c + 1e-3) == 7
+
+
+def test_laminar_phases_diverge_as_the_inverse_square_root():
+    """Type-I intermittency: <L> ~ (r_c - r)^(-1/2).
+
+    Measured over a 16-fold range of (r_c - r), which changes <L> by a factor of
+    four. The exponent is the prediction of the normal form x -> x + a x^2 + eps,
+    and is independent of the map's details -- another universal number.
+    """
+    r_c = maps.period_three_threshold()
+    epsilons = np.array([2.0e-3, 5.0e-4, 1.25e-4])
+    means = []
+    for eps in epsilons:
+        lengths = maps.laminar_phases(
+            systems.logistic_map, r_c - eps, n_iter=60000
+        )
+        assert lengths.size > 100, f"eps={eps}: only {lengths.size} laminar phases"
+        means.append(lengths.mean())
+    slope = float(np.polyfit(np.log(epsilons), np.log(means), 1)[0])
+    assert slope == pytest.approx(-0.5, abs=0.06), f"exponent {slope:.4f}"
+
+
+def test_laminar_phases_are_absent_well_below_the_threshold():
+    """The intermittency is specific to the approach to r_c: at r = 3.7 the
+    orbit is ordinarily chaotic and shadows no 3-cycle.
+    """
+    far = maps.laminar_phases(systems.logistic_map, 3.70, n_iter=60000)
+    near = maps.laminar_phases(
+        systems.logistic_map, maps.period_three_threshold() - 1.25e-4, n_iter=60000
+    )
+    assert far.size == 0 or far.mean() < 0.25 * near.mean()
+
+
+# ==========================================================================
+# maps: orbits and the cobweb construction
+# ==========================================================================
+def test_map_orbit_vectorises_over_initial_conditions():
+    """The vectorised path is what makes a live bifurcation diagram affordable,
+    so it must agree with iterating one initial condition at a time.
+    """
+    x0 = np.array([0.1, 0.35, 0.6, 0.87])
+    together = maps.map_orbit(systems.logistic_map, x0, 40, r=3.7)
+    for j, single in enumerate(x0):
+        alone = maps.map_orbit(systems.logistic_map, single, 40, r=3.7)
+        assert together[:, j] == pytest.approx(alone, abs=1e-14)
+
+
+def test_cobweb_path_vertices_lie_on_the_orbit():
+    """Every horizontal landing of the staircase is the next iterate, and every
+    vertex sits either on the diagonal or on the graph of f.
+    """
+    xs, ys = maps.cobweb_path(systems.logistic_map, 0.2, 12, r=3.5)
+    orbit = maps.map_orbit(systems.logistic_map, 0.2, 12, r=3.5)
+    # Vertices 0, 2, 4, ... sit on the diagonal at successive iterates.
+    assert xs[::2] == pytest.approx(orbit, abs=1e-14)
+    assert ys[::2] == pytest.approx(orbit, abs=1e-14)
+    # Vertices 1, 3, 5, ... sit on the graph: y = f(x).
+    assert ys[1::2] == pytest.approx(
+        systems.logistic_map(xs[1::2], r=3.5), abs=1e-14
+    )
+
+
+def test_periodic_window_has_its_own_cascade_with_the_same_delta():
+    """Self-similarity of the bifurcation diagram, as a measurement.
+
+    Inside the period-3 window the sequence 3 -> 6 -> 12 -> 24 -> ... is a
+    complete cascade in its own right, compressed into a parameter interval
+    0.0175 wide against the main cascade's 1.57, and its spacing ratios converge
+    to the *same* delta. That is the
+    content of the renormalisation argument: the window is not merely a picture
+    that resembles the whole diagram, it has the same quantitative structure.
+    """
+    cascade = maps.superstable_cascade(
+        systems.logistic_map, 0.5, 3.8285, 3.8497, n_max=5, base_period=3
+    )
+    assert cascade.size >= 5, f"only {cascade.size} sub-levels found"
+    # The first is the superstable 3-cycle, inside the window.
+    r_c = maps.period_three_threshold()
+    assert r_c < cascade[0] < 3.84
+    # Every level is a genuine superstable 3*2^n cycle.
+    for n, r in enumerate(cascade):
+        multiplier = maps.cycle_multiplier(
+            systems.logistic_map,
+            systems.logistic_map_derivative,
+            0.5,
+            3 * 2**n,
+            r=r,
+        )
+        assert multiplier == 0.0, f"n={n}, period={3 * 2**n}: {multiplier!r}"
+    # Same constant, from a cascade with a different base period, spanning
+    # ~1/90 of the parameter range the main cascade occupies.
+    estimate = maps.feigenbaum_ratios(cascade)[-1]
+    assert estimate == pytest.approx(maps.FEIGENBAUM_DELTA, abs=2e-2), (
+        f"sub-cascade delta {estimate:.6f}"
+    )
+    assert cascade[-1] - cascade[0] < 0.022
