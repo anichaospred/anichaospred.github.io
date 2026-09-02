@@ -2255,3 +2255,207 @@ def test_a_badly_chosen_scaling_window_returns_a_confident_wrong_answer():
     assert noisy > 2.35, noisy                   # quantised counts: slope steepens
     # The most dangerous case: wrong, but not obviously so.
     assert 1.8 < everything < 2.0, everything
+
+
+# ==========================================================================
+# errorgrowth: the upscale cascade and the intrinsic limit (Lorenz 1969)
+# ==========================================================================
+def test_a_single_cascade_band_is_exactly_logistic_growth():
+    """With one band the upscale term is absent, so the cascade model must
+    reduce to logistic_error_growth -- the same equation, integrated instead of
+    evaluated in closed form.
+
+    This is the reduction that makes the cascade model trustworthy: whatever it
+    does with many bands, with one it is a function whose exact solution is
+    already tested elsewhere in this file.
+    """
+    rate, initial = 0.9, 1e-6
+    times, errors = errorgrowth.cascade_growth(
+        1, alpha=0.0, rate0=rate, seed_amplitude=initial, t_final=25.0, n_times=60
+    )
+    exact = errorgrowth.logistic_error_growth(times, initial, rate, 1.0)
+    assert errors[:, 0] == pytest.approx(exact, abs=1e-8)
+
+
+def test_cascade_rates_double_every_alpha_inverse_octaves():
+    rates = errorgrowth.cascade_rates(6, alpha=0.5, rate0=3.0)
+    assert rates[0] == pytest.approx(3.0)
+    assert np.all(np.diff(np.log2(rates)) == pytest.approx(0.5))
+    # alpha = 0 is the scale-independent case: every band the same.
+    assert errorgrowth.cascade_rates(5, alpha=0.0) == pytest.approx(np.ones(5))
+
+
+def test_the_predictability_limit_is_finite_only_if_small_scales_grow_faster():
+    """Lorenz (1969), as the chapter's central claim.
+
+    Seeding the smallest *resolved* band at saturation and adding bands is
+    improving the observing resolution one octave at a time. The time for the
+    largest scale to be contaminated then either converges or does not, and
+    which one happens depends on alpha alone.
+    """
+    # alpha > 0: converges, and the increment per octave shrinks geometrically
+    # by 2^(-2 alpha) -- measured 0.630, 0.397, 0.250 against 2^(-2/3),
+    # 2^(-4/3), 2^(-2). Note that is the *square* of the 2^(-alpha) the naive
+    # sum-of-timescales argument would predict, so the increments die faster
+    # than that heuristic suggests.
+    for alpha, expected in ((1.0 / 3.0, 2.3035), (2.0 / 3.0, 1.4466), (1.0, 1.1220)):
+        times = [
+            errorgrowth.cascade_contamination_time(n, alpha=alpha)
+            for n in (8, 16, 24, 32)
+        ]
+        assert times[-1] == pytest.approx(expected, abs=5e-3), (alpha, times)
+        assert all(a <= b + 1e-9 for a, b in zip(times, times[1:])), times
+
+        octaves = np.arange(6, 20, 2)
+        curve = np.array(
+            [errorgrowth.cascade_contamination_time(n, alpha=alpha) for n in octaves]
+        )
+        increments = np.diff(curve) / 2.0
+        ratios = increments[1:] / increments[:-1]
+        assert np.all(increments > 0.0), increments
+        assert ratios[-1] == pytest.approx(2.0 ** (-2.0 * alpha), abs=0.02), (
+            alpha, ratios
+        )
+
+    # alpha = 0: diverges, at a settled cost per octave.
+    flat = {
+        n: errorgrowth.cascade_contamination_time(n, alpha=0.0)
+        for n in (16, 32, 64, 128)
+    }
+    assert flat[128] > 35.0, flat
+    per_octave = [
+        (flat[b] - flat[a]) / (b - a)
+        for a, b in ((16, 32), (32, 64), (64, 128))
+    ]
+    # Constant cost per octave, hence linear growth without bound.
+    assert all(0.27 < v < 0.32 for v in per_octave), per_octave
+
+
+def test_reducing_the_smallest_scale_error_buys_almost_nothing():
+    """The operational reading, and the sharpest number in the chapter.
+
+    In a multiscale system the error at the finest scale saturates so fast that
+    its initial amplitude is nearly irrelevant: sixteen orders of magnitude of
+    improvement buys 2 %. Reducing the error at the *largest* scale instead
+    obeys the familiar logarithmic law, ln(10)/lambda_0 per decade -- so where
+    an observing system improves matters far more than by how much.
+    """
+    fine = [
+        errorgrowth.cascade_contamination_time(16, seed_amplitude=amplitude)
+        for amplitude in (1.0, 1e-8, 1e-16)
+    ]
+    assert fine[0] == pytest.approx(1.4453, abs=5e-3)
+    assert (fine[-1] - fine[0]) / fine[0] < 0.03, fine
+
+    coarse = [
+        errorgrowth.cascade_contamination_time(
+            16, seed_amplitude=amplitude, seed_band=0
+        )
+        for amplitude in (1e-2, 1e-4, 1e-8)
+    ]
+    # ln(10)/lambda_0 = 2.303 per decade, at rate0 = 1.
+    per_decade = [
+        (coarse[1] - coarse[0]) / 2.0,
+        (coarse[2] - coarse[1]) / 4.0,
+    ]
+    for value in per_decade:
+        assert value == pytest.approx(np.log(10.0), abs=0.05), per_decade
+    # And it keeps paying: no convergence here at all.
+    assert coarse[-1] > 4.0 * coarse[0]
+
+
+# ==========================================================================
+# systems: two-scale Lorenz 96
+# ==========================================================================
+def test_two_scale_lorenz96_reduces_to_lorenz96_when_uncoupled():
+    """With h = 0 the slow equations are *identically* lorenz96, to the last bit.
+
+    The strongest available check that the two-scale right-hand side is the
+    model it claims to be: not a tolerance, an exact match, because switching
+    off the coupling should leave the slow equations untouched rather than
+    approximately untouched.
+    """
+    rng = np.random.default_rng(4)
+    n_slow, n_fast, forcing = 8, 32, 20.0
+    state = np.concatenate(
+        [rng.normal(5.0, 3.0, n_slow), rng.normal(0.0, 0.3, n_slow * n_fast)]
+    )
+    tendency = systems.lorenz96_two_scale(
+        0.0, state, n_slow=n_slow, n_fast=n_fast, forcing=forcing, coupling=0.0
+    )
+    slow, _ = systems.lorenz96_two_scale_split(state, n_slow)
+    expected = systems.lorenz96(0.0, slow, forcing=forcing)
+    assert np.max(np.abs(tendency[:n_slow] - expected)) == 0.0
+
+
+def test_two_scale_lorenz96_vectorises_over_ensemble_members():
+    """The batched path is what makes chapter 12's 32-member averages free."""
+    state = systems.lorenz96_two_scale_state(seed=2)
+    single = systems.lorenz96_two_scale(0.0, state)
+    ensemble = systems.lorenz96_two_scale(0.0, np.stack([state, state, state]))
+    assert ensemble.shape == (3, state.size)
+    for member in ensemble:
+        assert np.max(np.abs(member - single)) == 0.0
+
+
+def test_two_scale_lorenz96_coupling_conserves_total_energy():
+    """The exchange moves energy between the subsystems and creates none.
+
+    The slow equations lose (hc/b) sum_j Y_j and each fast equation gains
+    (hc/b) X_k, so the contributions to d/dt of (sum X^2)/2 and (sum Y^2)/2 are
+    exact negatives: both equal (hc/b) sum_k X_k sum_{j in k} Y_j, with
+    opposite signs. Measured residual 1.8e-14 out of terms of size 16.5.
+
+    A sign error in either half of the coupling, or a mismatch in how the fast
+    variables are grouped onto slow ones, breaks this and nothing else in the
+    suite would catch it.
+    """
+    n_slow, n_fast = 8, 32
+    rng = np.random.default_rng(11)
+    state = np.concatenate(
+        [rng.normal(5.0, 3.0, n_slow), rng.normal(0.0, 0.3, n_slow * n_fast)]
+    )
+    kwargs = dict(n_slow=n_slow, n_fast=n_fast, forcing=20.0)
+    exchange = systems.lorenz96_two_scale(
+        0.0, state, coupling=1.0, **kwargs
+    ) - systems.lorenz96_two_scale(0.0, state, coupling=0.0, **kwargs)
+
+    slow, fast = systems.lorenz96_two_scale_split(state, n_slow)
+    slow_rate, fast_rate = systems.lorenz96_two_scale_split(exchange, n_slow)
+    slow_power = float(slow @ slow_rate)
+    fast_power = float(fast @ fast_rate)
+
+    assert abs(slow_power) > 1.0, slow_power          # the term is not trivial
+    assert slow_power + fast_power == pytest.approx(0.0, abs=1e-10)
+
+
+def test_two_scale_lorenz96_quadratic_terms_conserve_energy():
+    """With the forcing and the coupling off, only the -X damping removes
+    energy: the advective terms conserve (sum X^2)/2 exactly.
+
+    The same identity the single-scale lorenz96 test asserts, carried over to
+    confirm the quadratic terms were transcribed correctly rather than merely
+    plausibly.
+    """
+    n_slow, n_fast = 8, 32
+    rng = np.random.default_rng(12)
+    state = np.concatenate(
+        [rng.normal(5.0, 3.0, n_slow), rng.normal(0.0, 0.3, n_slow * n_fast)]
+    )
+    tendency = systems.lorenz96_two_scale(
+        0.0, state, n_slow=n_slow, n_fast=n_fast, forcing=0.0, coupling=0.0
+    )
+    slow, _ = systems.lorenz96_two_scale_split(state, n_slow)
+    slow_rate, _ = systems.lorenz96_two_scale_split(tendency, n_slow)
+    # d/dt (sum X^2)/2 = -sum X^2 exactly: the quadratic part contributes zero.
+    assert float(slow @ slow_rate) == pytest.approx(-float(slow @ slow), abs=1e-9)
+
+
+def test_two_scale_lorenz96_state_has_the_advertised_shape():
+    state = systems.lorenz96_two_scale_state(n_slow=6, n_fast=10, seed=5)
+    assert state.size == 6 + 6 * 10
+    slow, fast = systems.lorenz96_two_scale_split(state, 6)
+    assert slow.size == 6 and fast.size == 60
+    # The slow part starts near the forcing, the fast part near zero.
+    assert np.abs(slow - 20.0).max() < 1.0
+    assert np.abs(fast).max() < 1.0

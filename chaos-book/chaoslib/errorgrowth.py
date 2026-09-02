@@ -20,7 +20,18 @@ __all__ = [
     "fit_logistic_error_growth",
     "saturation_level",
     "predictability_horizon",
+    "cascade_rates",
+    "cascade_growth",
+    "cascade_contamination_time",
+    "KOLMOGOROV_ALPHA",
 ]
+
+#: Growth-rate exponent implied by Kolmogorov scaling. The eddy turnover time
+#: at scale :math:`\ell` is :math:`\tau \sim \varepsilon^{-1/3}\ell^{2/3}`,
+#: so the growth rate goes as :math:`\ell^{-2/3}` and doubles every
+#: :math:`2/3` of an octave. This is the exponent for which Lorenz's argument
+#: gives a finite predictability limit.
+KOLMOGOROV_ALPHA = 2.0 / 3.0
 
 
 def logistic_error_growth(
@@ -107,3 +118,145 @@ def predictability_horizon(
     target = threshold_frac * np.nanmax(error)
     crossed = np.flatnonzero(error >= target)
     return float(t[crossed[0]]) if crossed.size else float("inf")
+
+
+# --------------------------------------------------------------------------
+# The upscale error cascade (Lorenz 1969)
+# --------------------------------------------------------------------------
+def cascade_rates(
+    n_bands: int, alpha: float = KOLMOGOROV_ALPHA, rate0: float = 1.0
+) -> Array:
+    r"""Growth rate of each octave band, largest scale first.
+
+    Band :math:`n` has scale :math:`L\,2^{-n}` and growth rate
+
+    .. math:: \lambda_n = \lambda_0\,2^{\alpha n},
+
+    so :math:`\alpha` is how much faster small scales grow than large ones.
+    :math:`\alpha = 2/3` is Kolmogorov (:data:`KOLMOGOROV_ALPHA`);
+    :math:`\alpha = 0` is a system whose growth rate does not depend on scale,
+    which is what Lorenz 63 and Lorenz 96 are. Everything in this chapter turns
+    on which of those two cases holds.
+    """
+    return float(rate0) * 2.0 ** (float(alpha) * np.arange(int(n_bands)))
+
+
+def _cascade_rhs(t: float, e: Array, rates: Array, coupling: float) -> Array:
+    """Logistic growth in each band, forced from the band below it in scale."""
+    e = np.clip(np.asarray(e, dtype=float), 0.0, 1.0)
+    upscale = np.zeros_like(e)
+    upscale[:-1] = e[1:]  # band n is fed by band n+1, one octave smaller
+    return rates * (e + coupling * upscale) * (1.0 - e)
+
+
+def cascade_growth(
+    n_bands: int,
+    alpha: float = KOLMOGOROV_ALPHA,
+    rate0: float = 1.0,
+    coupling: float = 1.0,
+    seed_amplitude: float = 1.0,
+    seed_band: int | None = None,
+    t_final: float = 40.0,
+    n_times: int = 400,
+) -> tuple[Array, Array]:
+    r"""Error in every octave band over time, for Lorenz's cascade argument.
+
+    Each band's error :math:`e_n` is measured as a fraction of *its own*
+    saturation level, so :math:`e_n \in [0, 1]`, and obeys
+
+    .. math::
+        \frac{de_n}{dt} = \lambda_n\bigl(e_n + \kappa\,e_{n+1}\bigr)
+                          \bigl(1 - e_n\bigr).
+
+    The first term is ordinary logistic growth -- exponential at rate
+    :math:`\lambda_n` until it saturates -- and the second is the **upscale
+    cascade**: band :math:`n` is contaminated by the band one octave smaller
+    than it. With a single band the second term is absent and this reduces
+    *exactly* to :func:`logistic_error_growth`, which the tests check.
+
+    ``seed_band`` defaults to the smallest (``n_bands - 1``), which is the
+    physically meaningful case: an observing system has a resolution, and about
+    scales finer than it we know nothing, so the error there starts at
+    saturation (``seed_amplitude = 1``). **Adding a band therefore represents
+    improving the observing resolution by one octave**, not reducing an error
+    amplitude, and that distinction is the whole point of the chapter.
+
+    Returns ``(times, errors)`` with ``errors`` of shape
+    ``(n_times, n_bands)``, band 0 first.
+    """
+    from scipy.integrate import solve_ivp
+
+    rates = cascade_rates(n_bands, alpha, rate0)
+    initial = np.zeros(int(n_bands), dtype=float)
+    initial[int(n_bands) - 1 if seed_band is None else int(seed_band)] = float(
+        seed_amplitude
+    )
+    times = np.linspace(0.0, float(t_final), int(n_times))
+    solution = solve_ivp(
+        _cascade_rhs,
+        (0.0, float(t_final)),
+        initial,
+        args=(rates, float(coupling)),
+        t_eval=times,
+        rtol=1e-10,
+        atol=1e-14,
+    )
+    return solution.t, solution.y.T
+
+
+def cascade_contamination_time(
+    n_bands: int,
+    alpha: float = KOLMOGOROV_ALPHA,
+    rate0: float = 1.0,
+    coupling: float = 1.0,
+    seed_amplitude: float = 1.0,
+    seed_band: int | None = None,
+    threshold: float = 0.5,
+    t_max: float = 4000.0,
+) -> float:
+    r"""Time for the **largest** scale to reach ``threshold`` of saturation.
+
+    This is the number Lorenz's argument is about. Seeding the smallest resolved
+    band at saturation and adding bands one at a time, it
+
+    * **converges** for :math:`\alpha > 0` -- measured 1.4466 at
+      :math:`\alpha = 2/3`, 2.3035 at :math:`1/3`, 1.1220 at :math:`1`, with the
+      increment from one more octave falling below :math:`10^{-4}` by sixteen
+      bands. Resolving finer scales stops buying lead time;
+    * **diverges** for :math:`\alpha = 0`, growing without bound at a settled
+      0.281 per octave out to 128 bands.
+
+    So a finite predictability limit follows from small scales growing faster
+    than large ones, and from nothing else. Note that the naive estimate
+    :math:`\sum_n \lambda_n^{-1} = (1 - 2^{-\alpha})^{-1}` gets the
+    *convergence* right and the constant wrong (2.70 against 1.4466 at
+    :math:`\alpha = 2/3`), because the bands overlap in time -- band
+    :math:`n-1` starts growing well before band :math:`n` saturates.
+
+    Returns ``nan`` if the threshold is not reached within ``t_max``.
+    """
+    from scipy.integrate import solve_ivp
+
+    rates = cascade_rates(n_bands, alpha, rate0)
+    initial = np.zeros(int(n_bands), dtype=float)
+    initial[int(n_bands) - 1 if seed_band is None else int(seed_band)] = float(
+        seed_amplitude
+    )
+
+    def reached(t: float, e: Array, *_: object) -> float:
+        return float(e[0]) - float(threshold)
+
+    reached.terminal = True  # type: ignore[attr-defined]
+    reached.direction = 1.0  # type: ignore[attr-defined]
+
+    solution = solve_ivp(
+        _cascade_rhs,
+        (0.0, float(t_max)),
+        initial,
+        args=(rates, float(coupling)),
+        events=reached,
+        rtol=1e-10,
+        atol=1e-16,
+    )
+    hits = solution.t_events[0]
+    return float(hits[0]) if hits.size else float("nan")

@@ -141,10 +141,19 @@ start and no link is dead.
     the spectrum collapsing under $i \to i/N$, and $D_{KY} = 0.675N$,
     $h_{KS} = 0.256N$ through the origin. That ratio is why Part V's ensemble methods
     look the way they do. *Knob:* $F$, $N$, the time window.
-12. **Scale-dependent error growth and the intrinsic limit** — Lorenz (1969);
-    multiscale L96 (Lorenz 2005); the upscale error cascade; the case for a *finite*
-    limit that no observing system can defeat. *Notebook:* seed error at one scale and
-    watch it climb the spectrum. *Knob:* the scale of the initial error.
+12. ★ **Scale-dependent error growth and the intrinsic limit** — Lorenz (1969), as a
+    measurement. Octave bands with $\lambda_n = \lambda_0 2^{\alpha n}$: the horizon
+    converges iff $\alpha > 0$ (1.4466 at Kolmogorov $\alpha = 2/3$, against
+    unbounded growth at 0.281 per octave for $\alpha = 0$, out to 128 bands). The
+    per-octave gain dies as $2^{-2\alpha}$ — measured 0.6299/0.3968/0.2500 against
+    0.6300/0.3969/0.2500, the *square* of the naive sum-of-timescales prediction, which
+    is why that argument gives 2.70 where the answer is 1.4466. **Where** you improve
+    beats **how much**: 16 decades of accuracy at the finest scale buys 2 %, digits at
+    the coarsest buy $\ln10/\lambda_0$ forever. Two-scale L96 shows the mechanism
+    (slow error grows at 2.96–2.99/TU regardless of the fast perturbation's size) but
+    **not** the limit — 0.145 against 0.148 TU/decade, and its $\lambda_1 = 24.7$
+    belongs to the fast subsystem and overstates large-scale growth 8.3×.
+    *Knob:* $\alpha$, resolved octaves, where the error is seeded.
 13. **Error growth in operational models** — Lorenz (1982) and forecast-error
     statistics; from an idealised $\lambda$ to real doubling times; the lagged-forecast
     method for estimating predictability from an operational archive. *Knob:* forecast
@@ -296,17 +305,17 @@ Pyodide build every reader's browser receives.
 
 | | Count |
 |---|---|
-| Chapters live | **9** (4, 5, 6, 7, 8, 11, 15, 16, 20) |
-| Chapters stubbed | 22 |
+| Chapters live | **10** (4, 5, 6, 7, 8, 11, 12, 15, 16, 20) |
+| Chapters stubbed | 21 |
 | `chaoslib` modules | 10 |
-| `chaoslib` tests | 158, all passing |
+| `chaoslib` tests | 167, all passing |
 
 **Next chapters, in priority order** — each already has most of its material in hand:
 
-1. **Ch. 12** (scale-dependent error growth) — `chaoslib.spatial` landed with chapter
-   11, which is most of what this needs beyond the multiscale Lorenz 2005 system.
-2. **Ch. 9** (error growth past the linear regime) — `chaoslib.errorgrowth` is tested,
-   and chapters 6 and 8 both now point at it.
+1. **Ch. 9** (error growth past the linear regime) — `chaoslib.errorgrowth` is tested,
+   and chapters 6, 8 and 12 all now point at it.
+2. **Ch. 13** (operational error growth) — the natural sequel to 12: what real forecast
+   errors do, against the idealised $\lambda$ of Part III.
 3. **Ch. 18/19** (variational and ensemble DA) — chapter 20 currently carries their
    theory sections; see the note below.
 
