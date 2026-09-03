@@ -2830,3 +2830,75 @@ def test_miller_madow_reduces_the_upward_bias_on_independent_samples():
 
     with pytest.raises(ValueError, match="correction must be"):
         information.mutual_information(np.ones((4, 4)), correction="jackknife")
+
+
+# ==========================================================================
+# integrate: the stochastic stepper
+# ==========================================================================
+def test_rk4_stochastic_with_zero_noise_is_exactly_rk4():
+    """Both arms of a perfect/imperfect-model comparison must share one
+    discretisation, so the deterministic limit has to be exact rather than
+    close.
+    """
+    grid = integrate.trajectory_grid(4.0, 0.01)
+    start = np.array([1.0, 1.0, 20.0])
+    deterministic = integrate.rk4(systems.lorenz63, start, grid)
+    stochastic = integrate.rk4_stochastic(
+        systems.lorenz63, start, grid, noise_std=0.0
+    )
+    assert np.array_equal(deterministic, stochastic)
+
+    # And with an ensemble.
+    ensemble = start + np.array([[0.0, 0.0, 0.0], [0.1, 0.0, 0.0]])
+    assert np.array_equal(
+        integrate.rk4(systems.lorenz63, ensemble, grid),
+        integrate.rk4_stochastic(systems.lorenz63, ensemble, grid, noise_std=0.0),
+    )
+
+
+def test_rk4_stochastic_reproduces_the_ornstein_uhlenbeck_variance():
+    """dx = -a x dt + sigma dW has stationary variance sigma^2/(2a), exactly.
+
+    This is what pins the sqrt(dt) scaling of the noise increment: get it wrong
+    -- scale by dt, or by 1 -- and the stationary variance is off by a factor of
+    dt or 1/dt, which at dt = 0.01 is two orders of magnitude.
+    """
+    decay, sigma = 2.0, 0.7
+    exact_variance = sigma**2 / (2.0 * decay)
+
+    def ou(t, x):
+        return -decay * x
+
+    grid = integrate.trajectory_grid(200.0, 0.01)
+    ensemble = np.zeros((400, 1))
+    path = integrate.rk4_stochastic(ou, ensemble, grid, noise_std=sigma, seed=1)
+    # Discard the approach to stationarity, then pool over time and members.
+    tail = path[path.shape[0] // 2 :]
+    assert float(tail.var()) == pytest.approx(exact_variance, rel=0.05)
+
+    # Halving sigma quarters the variance.
+    half = integrate.rk4_stochastic(ou, ensemble, grid, noise_std=0.5 * sigma, seed=1)
+    assert float(half[half.shape[0] // 2 :].var()) == pytest.approx(
+        0.25 * exact_variance, rel=0.06
+    )
+
+
+def test_rk4_stochastic_variance_grows_diffusively_for_a_free_particle():
+    """With no drift, dx = sigma dW gives Var = sigma^2 t exactly -- the
+    diffusive law that chapter 21 contrasts against exponential error growth.
+    """
+    sigma = 0.4
+    grid = integrate.trajectory_grid(5.0, 0.005)
+    path = integrate.rk4_stochastic(
+        lambda t, x: np.zeros_like(x), np.zeros((600, 1)), grid,
+        noise_std=sigma, seed=2,
+    )
+    variance = path.var(axis=1).ravel()
+    fitted = float(np.polyfit(grid, variance, 1)[0])
+    assert fitted == pytest.approx(sigma**2, rel=0.1), fitted
+    # And the RMS displacement goes as sqrt(t): log-log slope 1/2.
+    window = grid > 0.5
+    slope = float(
+        np.polyfit(np.log(grid[window]), 0.5 * np.log(variance[window]), 1)[0]
+    )
+    assert slope == pytest.approx(0.5, abs=0.05), slope

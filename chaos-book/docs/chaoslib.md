@@ -46,6 +46,14 @@ Lorenz's finite predictability limit — that needs a spectrum of scales, not tw
 `solve` binds parameters as keywords in a closure rather than through `solve_ivp`'s
 positional `args`, so it cannot silently depend on dict ordering.
 
+
+`rk4_stochastic` integrates $dx = f(x)\,dt + \sigma\,dW$ -- RK4 on the drift,
+Euler-Maruyama on the noise. `noise_std` is the diffusion coefficient, per **square root**
+of time, which is the usual place to go wrong; the tests pin it against the exact
+Ornstein-Uhlenbeck stationary variance $\sigma^2/2a$. At `noise_std=0` it reduces to
+`rk4` bit-for-bit, so both arms of a perfect-model/imperfect-model comparison share one
+discretisation. The noise term is first order while the drift is fourth.
+
 ## `lyapunov` — growth rates and dimension
 
 | Function | Notes |
