@@ -2679,3 +2679,154 @@ def test_lagged_forecast_difference_rejects_bad_shapes():
         errorgrowth.lagged_forecast_difference(np.zeros((5, 5)))
     with pytest.raises(ValueError, match="gap must be"):
         errorgrowth.lagged_forecast_difference(np.zeros((5, 5, 3)), gap=0)
+
+
+# ==========================================================================
+# information: the signal/dispersion split and its invariance
+# ==========================================================================
+def test_information_components_sum_to_the_total():
+    """Signal + dispersion = the relative entropy, exactly."""
+    rng = np.random.default_rng(3)
+    for k in (1, 2, 4, 7):
+        mean_c = rng.normal(size=k)
+        root_c = rng.normal(size=(k, k))
+        cov_c = root_c @ root_c.T + k * np.eye(k)
+        mean_f = mean_c + rng.normal(size=k)
+        root_f = rng.normal(size=(k, k))
+        cov_f = root_f @ root_f.T + 0.5 * np.eye(k)
+
+        total, signal, dispersion = information.gaussian_information_components(
+            mean_f, cov_f, mean_c, cov_c
+        )
+        assert signal + dispersion == pytest.approx(total, rel=1e-12)
+        assert total == pytest.approx(
+            information.gaussian_relative_entropy(mean_f, cov_f, mean_c, cov_c),
+            rel=1e-12,
+        )
+        # Both components are non-negative; the signal term is a quadratic form
+        # in a positive definite inverse, the dispersion term a Bregman
+        # divergence between covariances.
+        assert signal >= -1e-12, (k, signal)
+        assert dispersion >= -1e-12, (k, dispersion)
+
+
+def test_dispersion_vanishes_only_when_the_covariances_agree():
+    """D_disp = 0 exactly iff Sigma_f = Sigma_c, whatever the means do."""
+    rng = np.random.default_rng(4)
+    root = rng.normal(size=(5, 5))
+    cov = root @ root.T + 5.0 * np.eye(5)
+    mean_c = rng.normal(size=5)
+    mean_f = mean_c + rng.normal(size=5)
+
+    _, signal, dispersion = information.gaussian_information_components(
+        mean_f, cov, mean_c, cov
+    )
+    assert dispersion == pytest.approx(0.0, abs=1e-10)
+    assert signal > 0.1  # the means still differ, so there is signal
+
+    _, _, dispersion_scaled = information.gaussian_information_components(
+        mean_f, 1.3 * cov, mean_c, cov
+    )
+    assert dispersion_scaled > 0.05
+
+
+def test_relative_entropy_is_invariant_under_invertible_linear_maps():
+    """The reason to use an information measure rather than an error norm.
+
+    D and both its components are unchanged by any invertible linear
+    transformation of the state -- rescale a variable, rotate the basis, change
+    units -- because they depend only on Sigma_c^{-1} Sigma_f and on
+    (mu_c - mu_f)^T Sigma_c^{-1} (mu_c - mu_f), and the Jacobians cancel.
+
+    RMS error has no such property, and the test measures how badly: over the
+    same three transformations it varies by more than two orders of magnitude.
+    """
+    rng = np.random.default_rng(3)
+    k = 4
+    mean_c = rng.normal(size=k)
+    root_c = rng.normal(size=(k, k))
+    cov_c = root_c @ root_c.T + k * np.eye(k)
+    mean_f = mean_c + 0.5 * rng.normal(size=k)
+    root_f = 0.3 * rng.normal(size=(k, k))
+    cov_f = root_f @ root_f.T + 0.2 * np.eye(k)
+
+    reference = information.gaussian_information_components(
+        mean_f, cov_f, mean_c, cov_c
+    )
+    maps = {
+        "stretch one axis": np.diag([1.0, 1.0, 1.0, 10.0]),
+        "shrink everything": 0.01 * np.eye(k),
+        "random invertible": rng.normal(size=(k, k)) + 3.0 * np.eye(k),
+    }
+    errors = []
+    for name, transform in maps.items():
+        moved = information.gaussian_information_components(
+            transform @ mean_f, transform @ cov_f @ transform.T,
+            transform @ mean_c, transform @ cov_c @ transform.T,
+        )
+        assert moved == pytest.approx(reference, rel=1e-9), name
+        errors.append(
+            float(np.sqrt(np.mean((transform @ mean_f - transform @ mean_c) ** 2)))
+        )
+
+    # RMS error is not invariant, and not nearly.
+    assert max(errors) / min(errors) > 100.0, errors
+
+
+# ==========================================================================
+# information: the mutual-information estimator and its bias
+# ==========================================================================
+def test_mutual_information_matches_the_gaussian_closed_form():
+    """For a bivariate Gaussian, I = -ln(1 - r^2)/2 exactly.
+
+    The only case in this module with an analytic answer, so it is what pins
+    the estimator rather than another estimator.
+    """
+    rng = np.random.default_rng(6)
+    n = 400_000
+    for correlation in (0.5, 0.9):
+        exact = -0.5 * np.log(1.0 - correlation**2)
+        first = rng.normal(size=n)
+        second = correlation * first + np.sqrt(1.0 - correlation**2) * rng.normal(
+            size=n
+        )
+        joint, _, _ = np.histogram2d(first, second, bins=64)
+        assert information.mutual_information(joint) == pytest.approx(
+            exact, rel=0.04
+        ), correlation
+        assert information.mutual_information(
+            joint, correction="miller_madow"
+        ) == pytest.approx(exact, rel=0.04), correlation
+
+
+def test_miller_madow_reduces_the_upward_bias_on_independent_samples():
+    """The plug-in estimator is biased UP, and the bias is not small.
+
+    On independent samples the true mutual information is exactly zero, so
+    whatever the estimator returns is bias. Measured at N = 2000: 0.046 nats
+    with 16 bins and 0.493 with 64. The correction cuts both by a factor of two
+    to four -- worth having, and nowhere near a cure, which is why chapter 10
+    plots the dependence rather than quoting a number.
+    """
+    rng = np.random.default_rng(7)
+    for n, bins in ((2000, 16), (2000, 64), (20000, 32)):
+        first = rng.normal(size=n)
+        second = rng.normal(size=n)
+        joint, _, _ = np.histogram2d(first, second, bins=bins)
+        plug_in = information.mutual_information(joint)
+        corrected = information.mutual_information(joint, correction="miller_madow")
+        assert plug_in > 0.0, (n, bins)          # biased upward, always
+        assert 0.0 <= corrected < plug_in, (n, bins, plug_in, corrected)
+        assert corrected < 0.6 * plug_in, (n, bins, plug_in, corrected)
+
+    # More bins is more bias, at fixed sample size.
+    first = rng.normal(size=4000)
+    second = rng.normal(size=4000)
+    biases = []
+    for bins in (16, 32, 64):
+        joint, _, _ = np.histogram2d(first, second, bins=bins)
+        biases.append(information.mutual_information(joint))
+    assert biases[0] < biases[1] < biases[2], biases
+
+    with pytest.raises(ValueError, match="correction must be"):
+        information.mutual_information(np.ones((4, 4)), correction="jackknife")
