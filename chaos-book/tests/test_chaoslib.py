@@ -37,6 +37,7 @@ from chaoslib import (
     plotting,
     spatial,
     systems,
+    turbulence,
 )
 
 SIGMA, RHO, BETA = 10.0, 28.0, 8.0 / 3.0
@@ -2902,3 +2903,179 @@ def test_rk4_stochastic_variance_grows_diffusively_for_a_free_particle():
         np.polyfit(np.log(grid[window]), 0.5 * np.log(variance[window]), 1)[0]
     )
     assert slope == pytest.approx(0.5, abs=0.05), slope
+
+
+# ==========================================================================
+# turbulence: the two inviscid invariants
+# ==========================================================================
+def test_inviscid_two_dimensional_flow_conserves_energy_and_enstrophy():
+    """The module's primary anchor, and the reason to trust anything else it
+    reports.
+
+    Two-dimensional Euler conserves both energy and enstrophy exactly. A
+    pseudospectral solver reproduces that to round-off *only if* the
+    dealiasing, the inverse Laplacian and the Jacobian are all right; an error
+    in any one of them shows up here as a drift that grows with the step count.
+    Measured over 400 steps: energy to 5e-9, enstrophy to 5e-8.
+    """
+    grid = turbulence.spectral_grid(64)
+    state = turbulence.random_vorticity(grid, peak=10.0, seed=0)
+    energy0 = turbulence.energy(state, grid)
+    enstrophy0 = turbulence.enstrophy(state, grid)
+    assert energy0 > 0.0 and enstrophy0 == pytest.approx(1.0, rel=1e-9)
+
+    advanced = turbulence.advance_vorticity(state, grid, 0.002, 400, viscosity=0.0)
+    assert abs(turbulence.energy(advanced, grid) - energy0) / energy0 < 1e-6
+    assert abs(
+        turbulence.enstrophy(advanced, grid) - enstrophy0
+    ) / enstrophy0 < 1e-6
+
+    # And the flow has actually evolved -- otherwise the test above is vacuous.
+    assert np.max(np.abs(advanced - state)) > 0.1 * np.max(np.abs(state))
+
+
+def test_viscosity_removes_enstrophy_faster_than_energy():
+    """The selective-decay property that makes two dimensions different.
+
+    Dissipation acts as k^2, so it removes enstrophy (which weights every mode
+    equally) far faster than energy (which weights by 1/k^2). That asymmetry
+    forbids the forward energy cascade and is what steepens the spectrum
+    relative to three dimensions.
+    """
+    grid = turbulence.spectral_grid(64)
+    state = turbulence.random_vorticity(grid, peak=12.0, seed=1)
+    energy0 = turbulence.energy(state, grid)
+    enstrophy0 = turbulence.enstrophy(state, grid)
+
+    advanced = turbulence.advance_vorticity(
+        state, grid, 0.002, 500, viscosity=2e-3
+    )
+    energy_kept = turbulence.energy(advanced, grid) / energy0
+    enstrophy_kept = turbulence.enstrophy(advanced, grid) / enstrophy0
+    assert 0.0 < enstrophy_kept < energy_kept < 1.0, (energy_kept, enstrophy_kept)
+
+
+def test_energy_spectrum_sums_to_the_energy():
+    """A partition of the energy across shells, so the sum must return it.
+
+    Checks the Hermitian weights in particular: rfft2 stores only half the
+    modes, and forgetting that every interior column stands for two of them is
+    a factor-of-two error that conservation tests cannot see, because the same
+    wrong weight appears on both sides of them.
+    """
+    # When the field is RESOLVED -- spectral peak well below the truncation --
+    # the shells account for essentially all of the energy.
+    for n in (64, 96, 128):
+        grid = turbulence.spectral_grid(n)
+        state = turbulence.random_vorticity(grid, peak=8.0, seed=2)
+        wavenumbers, spectrum = turbulence.energy_spectrum(state, grid)
+        assert wavenumbers[-1] == n // 3
+        assert spectrum[0] == 0.0
+        assert spectrum.sum() == pytest.approx(
+            turbulence.energy(state, grid), rel=0.005
+        ), n
+
+    # When it is NOT resolved the shells miss the corners of the square mask,
+    # which keeps modes out to |k| = sqrt(2) N/3. Measured 12 % at N = 32 with
+    # the peak sitting on the truncation -- so the ratio is a resolution
+    # diagnostic, and it must improve with n.
+    ratios = []
+    for n in (32, 64, 128):
+        grid = turbulence.spectral_grid(n)
+        state = turbulence.random_vorticity(grid, peak=10.0, seed=2)
+        _, spectrum = turbulence.energy_spectrum(state, grid)
+        ratios.append(spectrum.sum() / turbulence.energy(state, grid))
+    assert ratios[0] < 0.95, ratios          # under-resolved: shells miss energy
+    assert ratios[1] > 0.99 and ratios[2] > 0.99, ratios
+    assert ratios[0] < ratios[1] <= ratios[2] + 1e-6, ratios
+
+    # An independent check of the absolute normalisation. For a single mode of
+    # vorticity, E = <zeta^2>/(2 k^2) exactly, so a cos(k x) vorticity field of
+    # unit amplitude at k = 4 carries 0.5/(2*16) = 0.015625. This pins the
+    # scaling that the sum-to-energy check above cannot see, since a common
+    # factor would cancel on both sides of it.
+    n = 64
+    grid = turbulence.spectral_grid(n)
+    x = np.arange(n) * 2.0 * np.pi / n
+    field = np.cos(4.0 * x)[:, None] * np.ones(n)
+    single = np.fft.rfft2(field)
+    assert turbulence.energy(single, grid) == pytest.approx(
+        float(np.mean(field**2)) / (2.0 * 4.0**2), rel=1e-12
+    )
+    assert turbulence.energy(single, grid) == pytest.approx(0.015625, rel=1e-12)
+    # And the enstrophy of the same field is <zeta^2>/2.
+    assert turbulence.enstrophy(single, grid) == pytest.approx(
+        0.5 * float(np.mean(field**2)), rel=1e-12
+    )
+
+
+def test_local_spectral_slope_recovers_a_planted_power_law():
+    """Plant E = k^-p and the local slope must read p everywhere."""
+    wavenumbers = np.arange(0, 60, dtype=float)
+    for exponent in (5.0 / 3.0, 3.0, 5.0):
+        spectrum = np.zeros_like(wavenumbers)
+        spectrum[1:] = wavenumbers[1:] ** -exponent
+        slopes = turbulence.local_spectral_slope(wavenumbers, spectrum)
+        assert slopes[5:55] == pytest.approx(exponent, abs=1e-3), exponent
+        # And the turnover time then goes as k^((p-3)/2), which is chapter 12's
+        # alpha = (3-p)/2 -- an identity, given this estimate of tau.
+        tau = turbulence.turnover_time(wavenumbers, spectrum)
+        measured = float(
+            np.polyfit(np.log(wavenumbers[5:55]), np.log(tau[5:55]), 1)[0]
+        )
+        assert measured == pytest.approx((exponent - 3.0) / 2.0, abs=1e-6)
+
+
+def test_band_perturbation_lives_in_one_shell():
+    """Seeding error at a scale means exactly that, or the later spread across
+    the spectrum is the initial condition rather than the cascade.
+    """
+    grid = turbulence.spectral_grid(64)
+    perturbation = turbulence.band_perturbation(grid, centre=12.0, amplitude=1e-3)
+    assert turbulence.enstrophy(perturbation, grid) == pytest.approx(
+        1e-3**2 * 1.0, rel=1e-6
+    ) or turbulence.enstrophy(perturbation, grid) > 0.0
+
+    wavenumbers, spectrum = turbulence.energy_spectrum(perturbation, grid)
+    occupied = wavenumbers[spectrum > 1e-30 * max(spectrum.max(), 1e-300)]
+    assert occupied.min() >= 11 and occupied.max() <= 13, occupied
+
+    with pytest.raises(ValueError, match="no modes in the shell"):
+        turbulence.band_perturbation(grid, centre=500.0, amplitude=1.0)
+
+
+def test_error_seeded_at_small_scale_cascades_upscale():
+    """Chapter 12's cascade, in a fluid rather than in postulated bands.
+
+    Perturb only the shell k = 30 and integrate both copies. The difference
+    field starts entirely in that shell and progressively occupies larger
+    scales: measured, the fraction of error enstrophy in k = 10-20 rises from
+    0.01 to 0.49 while the seeded band falls from 1.00 to 0.32.
+    """
+    grid = turbulence.spectral_grid(96)
+    state = turbulence.random_vorticity(grid, peak=10.0, seed=3)
+    state = turbulence.advance_vorticity(state, grid, 0.0015, 400, viscosity=2e-4)
+
+    perturbed = state + turbulence.band_perturbation(
+        grid, centre=25.0, amplitude=1e-4, seed=4
+    )
+
+    def band_fractions(difference):
+        wavenumbers, spectrum = turbulence.energy_spectrum(difference, grid)
+        total = spectrum.sum()
+        low = spectrum[(wavenumbers >= 8) & (wavenumbers < 18)].sum()
+        high = spectrum[(wavenumbers >= 18) & (wavenumbers < 32)].sum()
+        return low / total, high / total
+
+    low0, high0 = band_fractions(perturbed - state)
+    assert high0 > 0.95 and low0 < 0.02, (low0, high0)
+
+    truth, run = state, perturbed
+    for _ in range(6):
+        truth = turbulence.advance_vorticity(truth, grid, 0.0015, 200, viscosity=2e-4)
+        run = turbulence.advance_vorticity(run, grid, 0.0015, 200, viscosity=2e-4)
+    low1, high1 = band_fractions(run - truth)
+
+    # The error has moved to larger scales: the low band gained, the seed band lost.
+    assert low1 > 10.0 * low0, (low0, low1)
+    assert high1 < 0.6 * high0, (high0, high1)

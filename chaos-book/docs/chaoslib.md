@@ -259,6 +259,28 @@ $\pi$ per sample. At $\omega \approx 3$ rad per time unit, `dt = 0.01` is ample 
 `dt = 1` would alias and return a confidently wrong answer, with nothing in the result
 to indicate it. Check `dt` against $2\pi/\omega$.
 
+## `turbulence` — two-dimensional flow and its spectrum
+
+`spectral_grid`, `vorticity_tendency`, `advance_vorticity`, `energy`, `enstrophy`,
+`energy_spectrum`, `local_spectral_slope`, `turnover_time`, `random_vorticity`,
+`vorticity_field`, `band_perturbation`.
+
+Pseudospectral 2-D Navier-Stokes in vorticity form, dealiased by the two-thirds rule.
+Two exact anchors: inviscid Euler conserves **both** energy and enstrophy (drifts of
+$2\times10^{-7}$ and $2\times10^{-6}$ over 800 steps), and a single Fourier mode carries
+$\langle\zeta^2\rangle/2k^2$ — the second matters because `rfft2` stores half the
+modes, and a factor-of-two error in the Hermitian weights is invisible to a conservation
+test.
+
+Three things to know before using it. `energy_spectrum` stops at $N/3$ and its shell sum
+is **not** always the energy: the mask is a *square*, so modes survive to $\sqrt2 N/3$ in
+its corners — negligible when resolved (<0.02 % at $N\ge64$), 12 % when the peak sits on
+the truncation, which makes the ratio a resolution diagnostic. `turnover_time` gives
+$\alpha = (3-p)/2$ by algebra, not measurement, so agreement with the spectrum's slope is
+a tautology. And it will **not** produce an inertial range at any resolution this book can
+run: chapter 14 measures 0.00/0.04/0.05 octaves within 0.4 of $-3$ at
+$64^2$/$128^2$/$256^2$.
+
 ## `plotting` — the book's figure design system
 
 Semantic colours (`C_TRUTH`, `C_PERT`, `C_SPREAD`, `C_MEAN`, `C_FIXED`, `C_SAT`,

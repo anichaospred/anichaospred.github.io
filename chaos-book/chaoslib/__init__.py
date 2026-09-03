@@ -24,6 +24,7 @@ dimension    fractal dimension estimated from a sampled trajectory
 information  entropy, relative entropy and mutual information as predictability
 maps         bifurcation cascades, Feigenbaum universality, map Lyapunov exponents
 spatial      spectra, phase speeds and correlation lengths for fields on a ring
+turbulence   two-dimensional pseudospectral flow and its energy spectrum
 adjoint      tangent-linear and adjoint propagators; singular vectors
 assimilate   3D-Var, 4D-Var, Kalman filter and EnKF on the low-order models
 ensemble     ensemble construction and probabilistic verification scores
@@ -51,6 +52,7 @@ from chaoslib import (
     plotting,
     spatial,
     systems,
+    turbulence,
 )
 
 try:
@@ -70,6 +72,7 @@ __all__ = [
     "maps",
     "plotting",
     "spatial",
+    "turbulence",
     "systems",
     "__version__",
 ]
