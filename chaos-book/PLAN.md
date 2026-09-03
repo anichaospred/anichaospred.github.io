@@ -221,10 +221,17 @@ start and no link is dead.
     and agreeing with $1/\lambda_1$ from chapter 7 to a few percent by an entirely
     independent route. *Knob:* ensemble size, inflation, observation interval,
     $\delta_0$.
-21. **Model error and the imperfect-model problem** — Stochastic parameterisation;
-    model-error growth vs. initial-condition error growth; the imperfect-model
-    scenario. *Notebook:* forecast L96 with a wrong $F$ and separate the two error
-    sources. *Knob:* model bias.
+21. ★ **Model error and the imperfect-model problem** — Three error sources, three
+    growth laws: IC error exponential, deterministic bias **linear** in $t$ (measured
+    $d\ln E/d\ln t = 1.087$ against a predicted 1, across biases spanning 20×),
+    stochastic forcing **diffusive**. The headline is a **ceiling**: with a bias of
+    0.01, a 0.125 % error in $F$, improving $\delta_0$ from $10^{-4}$ to $10^{-8}$
+    buys $-0.005$ days — the lead pinned at 19.6 days, exactly the perfect-IC value.
+    The same two-decade improvement is worth 12.3 days with a perfect model and 0.1 at
+    bias 0.2. So chapters 8/13/20's $\ln10/\lambda_1$ law has a stopping condition
+    about one decade wide, and Parts III–IV's perfect-model numbers are **upper
+    bounds**. Neither DA nor ch. 13's estimator can fix or even see it.
+    *Knob:* model bias, initial accuracy, error source.
 22. **Forecast verification and the practical horizon** — Anomaly correlation; the
     ECMWF skill record *[citation needed]*; how the practical horizon has advanced
     while the intrinsic one has not. *Knob:* threshold defining "useful".
@@ -328,16 +335,14 @@ Pyodide build every reader's browser receives.
 
 | | Count |
 |---|---|
-| Chapters live | **13** (4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 15, 16, 20) |
-| Chapters stubbed | 18 |
+| Chapters live | **14** (4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 15, 16, 20, 21) |
+| Chapters stubbed | 17 |
 | `chaoslib` modules | 10 |
-| `chaoslib` tests | 181, all passing |
+| `chaoslib` tests | 184, all passing |
 
 **Next chapters, in priority order** — each already has most of its material in hand:
 
-1. **Ch. 21** (model error) — chapters 12 and 13 both now end by pointing at it, and 13
-   proves the lagged-forecast method cannot see it.
-2. **Ch. 14** (chaos to turbulence) — the last stub in Part IV, which is otherwise
+1. **Ch. 14** (chaos to turbulence) — the last stub in Part IV, which is otherwise
    complete.
 3. **Ch. 18/19** (variational and ensemble DA) — chapter 20 currently carries their
    theory sections; see the note below.
