@@ -162,10 +162,17 @@ start and no link is dead.
     **not** the limit — 0.145 against 0.148 TU/decade, and its $\lambda_1 = 24.7$
     belongs to the fast subsystem and overstates large-scale growth 8.3×.
     *Knob:* $\alpha$, resolved octaves, where the error is seeded.
-13. **Error growth in operational models** — Lorenz (1982) and forecast-error
-    statistics; from an idealised $\lambda$ to real doubling times; the lagged-forecast
-    method for estimating predictability from an operational archive. *Knob:* forecast
-    lead.
+13. ★ **Error growth in operational models** — Lorenz's (1982) lagged-forecast
+    estimator, validated against a truth it never uses. A synthetic operational centre
+    on L96 (cycling EnKF, six-hourly analyses, 30-day forecasts from 600 analyses, four
+    observing networks) shows the truth-free estimate recovering the true growth rate to
+    2 % at analysis errors of 0.5–2 % of saturation and 5 % at 6 % — and recovering it
+    at *every* amplitude, not just one fitted number. The logarithmic return holds end
+    to end: 13× better analysis buys 7.0 days against 6.9 predicted. And the operational
+    doubling time is **1.86 days against $\ln2/\lambda_1$ = 2.08**, above $\lambda_1$
+    at small error (non-normal transient growth, ch. 16) and below it at large
+    (saturation, ch. 9). Blind to model error by construction, which the tests assert.
+    *Knob:* the observing network, the fit window.
 14. **From chaos to turbulence** — Dissipative low-order chaos vs. fully developed
     turbulence; predictability in 2-D and quasi-geostrophic flow; error growth as a
     spectral process. *Reuse:* the existing `real_butterfly_effect` and `sqgturb`
@@ -313,18 +320,17 @@ Pyodide build every reader's browser receives.
 
 | | Count |
 |---|---|
-| Chapters live | **11** (4, 5, 6, 7, 8, 9, 11, 12, 15, 16, 20) |
-| Chapters stubbed | 20 |
+| Chapters live | **12** (4, 5, 6, 7, 8, 9, 11, 12, 13, 15, 16, 20) |
+| Chapters stubbed | 19 |
 | `chaoslib` modules | 10 |
-| `chaoslib` tests | 173, all passing |
+| `chaoslib` tests | 176, all passing |
 
 **Next chapters, in priority order** — each already has most of its material in hand:
 
-1. **Ch. 13** (operational error growth) — the sequel to 9 and 12: what real forecast
-   errors do, against the idealised $\lambda$ of Part III. Chapter 9 ends by explaining
-   why it cannot just quote a $\lambda$.
-2. **Ch. 10** (information theory) — `chaoslib.information` is tested and unused by any
-   live chapter; chapter 8's $h_{KS}$ in bits is the hook.
+1. **Ch. 10** (information theory) — `chaoslib.information` is tested and unused by any
+   live chapter; chapter 8's $h_{KS}$ in bits is the hook, and it would finish Part III.
+2. **Ch. 21** (model error) — chapters 12 and 13 both now end by pointing at it, and 13
+   proves the lagged-forecast method cannot see it.
 3. **Ch. 18/19** (variational and ensemble DA) — chapter 20 currently carries their
    theory sections; see the note below.
 

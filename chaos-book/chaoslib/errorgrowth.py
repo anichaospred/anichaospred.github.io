@@ -20,6 +20,7 @@ __all__ = [
     "fit_logistic_error_growth",
     "saturation_level",
     "predictability_horizon",
+    "lagged_forecast_difference",
     "cascade_rates",
     "cascade_growth",
     "cascade_contamination_time",
@@ -181,6 +182,74 @@ def predictability_horizon(
     target = threshold_frac * np.nanmax(error)
     crossed = np.flatnonzero(error >= target)
     return float(t[crossed[0]]) if crossed.size else float("inf")
+
+
+def lagged_forecast_difference(forecasts: Array, gap: int = 1) -> Array:
+    r"""Lorenz's (1982) error-growth estimator, which never uses the truth.
+
+    ``forecasts`` has shape ``(n_leads, n_starts, n_state)``:
+    ``forecasts[L, m]`` is the forecast started from analysis :math:`m` at lead
+    :math:`L`, so it verifies at analysis time :math:`m + L`. That is the shape
+    an operational archive has.
+
+    For a verification time :math:`v`, two forecasts valid at :math:`v` were
+    started :math:`\text{gap}` analyses apart: one at :math:`v - L` with lead
+    :math:`L`, the other at :math:`v - L - \text{gap}` with lead
+    :math:`L + \text{gap}`. Their RMS difference, averaged over :math:`v`, is
+    returned as a function of :math:`L`.
+
+    **Why this is worth having.** A forecast cannot be verified against the
+    truth, because there is no truth -- only an analysis, which is itself a
+    forecast corrected by observations, and whose own error is a large fraction
+    of a short-range forecast's. Twin experiments are unavailable for the same
+    reason. But two forecasts of *different lead* valid at the *same time* can
+    be differenced with no reference to anything external, and their difference
+    grows at the same rate the error does: at the moment the older forecast
+    reaches :math:`v - L`, it differs from the younger one's starting analysis
+    by roughly a ``gap``-cycle forecast error, and both are then integrated
+    forward together for :math:`L` cycles.
+
+    The curve is *offset* below the true error curve -- it starts from a
+    forecast difference rather than from the analysis error -- but the offset
+    does not matter, because the growth **rate** is what the method is for.
+    Validated in chapter 13 against the truth on a synthetic Lorenz 96 archive:
+    fitted over :math:`E \in [0.02, 0.2]\,E_\infty`, the estimated rate is
+    within 2 % of the true one for analysis errors of 0.5 % and 2 % of the
+    climatological spread, and within 5 % at 6 %.
+
+    **What it cannot see.** The two forecasts come from the same model, so any
+    systematic model error is common to both and cancels algebraically in the
+    difference -- adding a constant bias to an entire archive leaves this
+    function's output unchanged to round-off, which the tests assert. The
+    method estimates the growth of *initial-condition* error and is blind to
+    model error by construction -- see chapter 21. It also needs an exponential
+    phase to fit: when the analysis error is already a large fraction of
+    saturation (44 % in chapter 13's most degraded configuration) there is
+    nothing left to measure, and that is a failure of the archive rather than of
+    the estimator.
+    """
+    array = np.asarray(forecasts, dtype=float)
+    if array.ndim != 3:
+        raise ValueError(
+            "forecasts must have shape (n_leads, n_starts, n_state), got "
+            f"{array.shape}"
+        )
+    n_leads, n_starts = array.shape[0], array.shape[1]
+    gap = int(gap)
+    if gap < 1:
+        raise ValueError("gap must be at least 1")
+
+    out = np.full(max(0, n_leads - gap), np.nan)
+    for lead in range(out.size):
+        verification = np.arange(lead + gap, n_starts)
+        if verification.size == 0:
+            continue
+        older = array[lead + gap, verification - lead - gap]
+        younger = array[lead, verification - lead]
+        out[lead] = float(
+            np.sqrt(np.mean((older - younger) ** 2, axis=-1)).mean()
+        )
+    return out
 
 
 # --------------------------------------------------------------------------

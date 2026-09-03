@@ -116,6 +116,13 @@ because an ensemble-*mean* curve compared against the *RMS* saturation looks as 
 stops growing early, by 11 % for L63 and 0.5 % for L96. The RMS form obeys the exact
 identity $\sqrt2 \times$ (RMS spread about the mean).
 
+`lagged_forecast_difference` is Lorenz's (1982) estimator: given an archive shaped
+`(n_leads, n_starts, n_state)`, it differences forecasts of successive lead valid at the
+same time, so it needs **no truth**. Chapter 13 validates it against one — within 2 % of
+the true growth rate at realistic analysis errors. It is blind to model error by
+construction (both forecasts come from the same model, so a common bias cancels), which
+a test asserts by biasing a whole archive.
+
 `cascade_rates`, `cascade_growth`, `cascade_contamination_time`, `KOLMOGOROV_ALPHA`
 add Lorenz's (1969) octave-band model: band $n$ has growth rate
 $\lambda_0 2^{\alpha n}$ and is forced by the band one octave smaller. With one band it
