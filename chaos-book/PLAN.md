@@ -181,10 +181,18 @@ start and no link is dead.
     at small error (non-normal transient growth, ch. 16) and below it at large
     (saturation, ch. 9). Blind to model error by construction, which the tests assert.
     *Knob:* the observing network, the fit window.
-14. **From chaos to turbulence** — Dissipative low-order chaos vs. fully developed
-    turbulence; predictability in 2-D and quasi-geostrophic flow; error growth as a
-    spectral process. *Reuse:* the existing `real_butterfly_effect` and `sqgturb`
-    work. *Knob:* Reynolds/resolution.
+14. ★ **From chaos to turbulence** — A 2-D pseudospectral solver (energy and
+    enstrophy conserved to $2\times10^{-7}$ and $2\times10^{-6}$ over 800 inviscid
+    steps) supplying what ch. 12 postulated. The payoff is algebra:
+    $\tau \sim [k^3E(k)]^{-1/2}$ gives $\alpha = (3-p)/2$, so 3-D ($p=5/3$) has a
+    **bounded** horizon and 2-D ($p=3$) does not — and the atmosphere is the second at
+    large scales and the first at small ones. Measured: the fluid's spectrum falls 3.55
+    decades over 3.4 octaves against L96's 0.71 over 1.2, and its peak *migrates* 9→4
+    (inverse cascade) where L96's is pinned at $m^*=8$ by ch. 11's dispersion relation.
+    The upscale error cascade works ($k\in[8,18)$ share 0.000→0.536). **No inertial
+    range at any affordable resolution** — 0.00/0.04/0.05 octaves within 0.4 of $-3$ at
+    $64^2$/$128^2$/$256^2$ — reported rather than fitted away. *Knob:* resolution,
+    seeding scale. †
 
 ### Part V — The machinery of prediction
 
@@ -335,17 +343,20 @@ Pyodide build every reader's browser receives.
 
 | | Count |
 |---|---|
-| Chapters live | **14** (4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 15, 16, 20, 21) |
-| Chapters stubbed | 17 |
+| Chapters live | **15** (4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 20, 21) |
+| Chapters stubbed | 16 |
 | `chaoslib` modules | 10 |
-| `chaoslib` tests | 184, all passing |
+| `chaoslib` tests | 190, all passing |
 
 **Next chapters, in priority order** — each already has most of its material in hand:
 
-1. **Ch. 14** (chaos to turbulence) — the last stub in Part IV, which is otherwise
-   complete.
-3. **Ch. 18/19** (variational and ensemble DA) — chapter 20 currently carries their
-   theory sections; see the note below.
+1. **Ch. 18/19** (variational and ensemble DA) — chapter 20 currently carries their
+   theory sections; see the note below. Parts III and IV are now complete, so Part V is
+   where the remaining work is.
+2. **Ch. 17** (probabilistic forecast design) — `chaoslib.ensemble` is tested and
+   unused by any live chapter; chapters 11 and 21 both end by pointing at it.
+3. **Ch. 22** (verification) — the natural close of Part V, and chapters 13 and 21 both
+   defer the observation-error problem to it.
 
 ### A second decision on record: splitting chapter 20
 
