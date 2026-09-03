@@ -107,6 +107,15 @@ that a reliable ensemble has RMS spread equal to the RMS error of its mean.
 between random state pairs — i.e. the error of a climatological forecast),
 `predictability_horizon`.
 
+Two things about the basics, both measured in chapter 9 and both easy to get wrong.
+`fit_logistic_error_growth` fits in **log** space by default: an error curve spans ten
+orders of magnitude and least squares on $E$ weights by $E$, so the saturated tail
+outweighs the whole exponential phase and $\lambda$ comes out 19 % low (0.748 against a
+true 0.921). And `saturation_level` takes a `statistic` -- match it to your error curve,
+because an ensemble-*mean* curve compared against the *RMS* saturation looks as though it
+stops growing early, by 11 % for L63 and 0.5 % for L96. The RMS form obeys the exact
+identity $\sqrt2 \times$ (RMS spread about the mean).
+
 `cascade_rates`, `cascade_growth`, `cascade_contamination_time`, `KOLMOGOROV_ALPHA`
 add Lorenz's (1969) octave-band model: band $n$ has growth rate
 $\lambda_0 2^{\alpha n}$ and is forced by the band one octave smaller. With one band it
