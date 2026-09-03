@@ -2610,3 +2610,72 @@ def test_logistic_form_requires_slope_over_intercept_of_minus_one():
     slope, intercept = np.polyfit(fraction[window], local[window], 1)
     assert intercept == pytest.approx(rate, rel=1e-3)
     assert slope / intercept == pytest.approx(-1.0, abs=1e-3)
+
+
+def test_lagged_forecast_difference_recovers_a_planted_growth_rate():
+    """Lorenz's estimator, checked on an archive whose growth rate is known.
+
+    Build forecasts as truth plus a perturbation growing at an exactly known
+    rate: forecasts[L, m] = truth(m+L) + delta * exp(rate * L * cycle) * v.
+    Two forecasts valid at the same time then differ by a factor
+    exp(rate * L * cycle) times a fixed vector, so the estimator's output must
+    grow at exactly `rate` -- no dynamics, no fitting slack, just the indexing.
+
+    This is the test that the *indexing* is right, which is the only part of
+    the method that can be got wrong silently.
+    """
+    n_leads, n_starts, n_state = 40, 200, 8
+    cycle, rate, delta = 0.05, 1.7, 1e-4
+    rng = np.random.default_rng(11)
+    truth = rng.normal(size=(n_starts + n_leads, n_state))
+    direction = rng.normal(size=n_state)
+    direction /= np.linalg.norm(direction)
+
+    forecasts = np.empty((n_leads, n_starts, n_state))
+    for lead in range(n_leads):
+        amplitude = delta * np.exp(rate * lead * cycle)
+        forecasts[lead] = truth[lead : lead + n_starts] + amplitude * direction
+
+    lagged = errorgrowth.lagged_forecast_difference(forecasts, gap=1)
+    assert lagged.size == n_leads - 1
+    assert np.all(np.isfinite(lagged))
+
+    leads = np.arange(lagged.size) * cycle
+    fitted = float(np.polyfit(leads, np.log(lagged), 1)[0])
+    assert fitted == pytest.approx(rate, rel=1e-9), fitted
+
+    # A wider gap starts from a larger difference but grows at the same rate.
+    wide = errorgrowth.lagged_forecast_difference(forecasts, gap=4)
+    wide_leads = np.arange(wide.size) * cycle
+    assert float(np.polyfit(wide_leads, np.log(wide), 1)[0]) == pytest.approx(
+        rate, rel=1e-9
+    )
+    assert wide[0] > lagged[0]
+
+
+def test_lagged_forecast_difference_is_blind_to_a_constant_model_bias():
+    """The method's structural limitation, as an identity.
+
+    Both forecasts come from the same model, so a bias common to every forecast
+    cancels *algebraically* in the difference. Adding any constant offset to the
+    whole archive therefore leaves the estimator's output unchanged to
+    round-off -- which is why the method measures initial-condition error growth
+    and says nothing at all about model error.
+
+    (Round-off, not bit-identity: adding 5 and subtracting it again costs an
+    ulp. Measured 2.2e-16 on values of order 1.)
+    """
+    rng = np.random.default_rng(12)
+    forecasts = rng.normal(size=(20, 60, 6))
+    plain = errorgrowth.lagged_forecast_difference(forecasts)
+    for scale in (5.0, 500.0):
+        bias = rng.normal(size=6) * scale
+        biased = errorgrowth.lagged_forecast_difference(forecasts + bias)
+        assert biased == pytest.approx(plain, rel=1e-12), scale
+
+
+def test_lagged_forecast_difference_rejects_bad_shapes():
+    with pytest.raises(ValueError, match="n_leads, n_starts, n_state"):
+        errorgrowth.lagged_forecast_difference(np.zeros((5, 5)))
+    with pytest.raises(ValueError, match="gap must be"):
+        errorgrowth.lagged_forecast_difference(np.zeros((5, 5, 3)), gap=0)
