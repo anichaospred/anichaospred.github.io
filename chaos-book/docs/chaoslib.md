@@ -214,8 +214,21 @@ superstable parameter gives a genuine $-\infty$, not an artefact.
 ## `information` — predictability as information
 
 `shannon_entropy`, `relative_entropy`, `mutual_information`, `predictive_information`,
-`gaussian_relative_entropy` (closed form, separating the signal and dispersion
-components).
+`gaussian_relative_entropy`, `gaussian_information_components`.
+
+`gaussian_information_components` returns `(total, signal, dispersion)` — the two ways a
+forecast can be informative, summing to the total exactly. Both are **invariant under any
+invertible linear map of the state**, which is the reason to use an information measure at
+all: chapter 10 measures $D$ identical to eight decimals under four transformations where
+RMS error varies 371-fold.
+
+Two warnings, both measured in chapter 10. Do not apply the Gaussian form to a **full
+state vector** whose ensemble is smaller than the space: on a 2.06-dimensional attractor
+in three dimensions $\Sigma_f$ is near-singular, so $\ln\det\Sigma_f$ — and the
+dispersion term with it — is set by the regularisation, and two defensible floors give
+decay rates differing by 1.78×. And `mutual_information` is biased **upward**; pass
+`correction="miller_madow"` to remove the leading term, which helps by a factor of two to
+four and not more. Measure the floor at a lag where the true answer is zero.
 
 ## `spatial` — diagnostics for a field on a ring
 

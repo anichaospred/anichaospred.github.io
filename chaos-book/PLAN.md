@@ -131,11 +131,19 @@ start and no link is dead.
    logistic $\lambda$ is not $\lambda_1$ (12 % and 26 % low), and the doubling time
    quadruples across the useful range. *Knob:* $\delta_0$, the fit space, the
    threshold.
-10. **Information theory and predictability** — Entropy, relative entropy and mutual
-    information as predictability measures; the signal and dispersion components of
-    forecast information; a horizon that needs no assumption of exponential growth.
-    *Notebook:* $I(x(0); x(\tau))$ against lead time, beside the Lyapunov estimate.
-    *Knob:* lead time, bin count.
+10. ★ **Information theory and predictability** — Relative entropy against
+    climatology: **invariant** under any invertible change of variables (unchanged to
+    $2\times10^{-15}$ nats under four transformations, where RMS error varies from 3.7×
+    to **371×** depending only on the rescaling), which
+    is the exact counterpart of ch. 16's norm problem. Forecast information is **94 %
+    dispersion**, not signal. It decays *linearly* at $\lambda_1$ — four measurements
+    within 4 %, and Lorenz 96 rules out $h_{KS}$ by 6.4× — so $h_{KS}$ is how fast the
+    system destroys information about *itself* while $\lambda_1$ is how fast a forecast
+    of one variable stops being informative. Doing it on the full state fails quietly:
+    a near-singular $\Sigma_f$ on a 2.06-dimensional attractor gives decay rates of
+    1.677 or 0.940 depending on the regularisation alone. Mutual information avoids the
+    Gaussian assumption and pays in bias, with a floor of 0.009–0.039 nats set by bin
+    count. *Knob:* system and observable, the rescaling factor, bin count.
 
 ### Part IV — Many scales, many degrees of freedom
 
@@ -320,17 +328,17 @@ Pyodide build every reader's browser receives.
 
 | | Count |
 |---|---|
-| Chapters live | **12** (4, 5, 6, 7, 8, 9, 11, 12, 13, 15, 16, 20) |
-| Chapters stubbed | 19 |
+| Chapters live | **13** (4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 15, 16, 20) |
+| Chapters stubbed | 18 |
 | `chaoslib` modules | 10 |
-| `chaoslib` tests | 176, all passing |
+| `chaoslib` tests | 181, all passing |
 
 **Next chapters, in priority order** — each already has most of its material in hand:
 
-1. **Ch. 10** (information theory) — `chaoslib.information` is tested and unused by any
-   live chapter; chapter 8's $h_{KS}$ in bits is the hook, and it would finish Part III.
-2. **Ch. 21** (model error) — chapters 12 and 13 both now end by pointing at it, and 13
+1. **Ch. 21** (model error) — chapters 12 and 13 both now end by pointing at it, and 13
    proves the lagged-forecast method cannot see it.
+2. **Ch. 14** (chaos to turbulence) — the last stub in Part IV, which is otherwise
+   complete.
 3. **Ch. 18/19** (variational and ensemble DA) — chapter 20 currently carries their
    theory sections; see the note below.
 
