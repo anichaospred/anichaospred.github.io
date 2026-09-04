@@ -234,10 +234,23 @@ start and no link is dead.
     term entirely gives a bitwise-identical curve; and incremental 4D-Var, being
     Gauss--Newton, converges from a background of error 1.33 and **stalls completely** at
     2.66. *Knob:* window length, $\mathbf{B}$. †
-19. **Ensemble data assimilation** — The EnKF and ETKF; sampling error, localisation
-    and inflation; hybrid methods. *Notebook:* EnKF on L96 with localisation radius
-    and inflation as sliders, and the filter-divergence cliff. *Knob:* ensemble size,
-    localisation.
+19. ★ **Ensemble data assimilation** — A flow-dependent covariance without an
+    adjoint, and the rank problem that costs. Sampling error scales as $k^{-1/2}$
+    with constant **1.00** over six doublings, so halving it costs four times the
+    ensemble: localisation is a precondition, not a refinement. Its deeper job is
+    **rank**: a global filter's increment lies in the span of the $k-1$ perturbations
+    (exact to $2\times10^{-15}$) and no covariance tapering changes that, while a
+    *local* filter puts 78 % of its increment outside that span at $k=10$. The
+    filter-divergence cliff is sharp — unlocalised, $k=10$ scores 3.38 against a
+    climatology of 3.64 (worse than useless), and $k=15$ scores 0.24. The optimal
+    radius **grows** with ensemble size (12 → 20 → none) and its penalty is lopsided:
+    too loose costs 19$\times$, too tight 1.5$\times$. And localisation and ensemble
+    size are **substitutes** — at radius 2, eight times the members buys 3 %. The ETKF
+    is exactly the Kalman filter for the covariance the ensemble has, at every $k$
+    including $k<n$, and beats the perturbed-observation form by 64 % at $k=5$.
+    Hybrids came out small (8 % on top of localisation, against a ±2.5 % noise floor)
+    and the chapter says why that is the friendliest case for a localised ensemble
+    rather than a verdict on hybrids. *Knob:* ensemble size, localisation radius. †
 20. ★ **Data assimilation in practice** — Cycling 3D-Var, 4D-Var and the EnKF on
     Lorenz 63; analysis error as the floor on forecast error; and the logarithmic
     return on better observations, $\Delta t = \ln 10/\lambda$ — measured directly,
@@ -358,22 +371,19 @@ Pyodide build every reader's browser receives.
 
 | | Count |
 |---|---|
-| Chapters live | **16** (4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 18, 20, 21) |
-| Chapters stubbed | 15 |
+| Chapters live | **17** (4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 18, 19, 20, 21) |
+| Chapters stubbed | 14 |
 | `chaoslib` modules | 10 |
-| `chaoslib` tests | 197, all passing |
+| `chaoslib` tests | 209, all passing |
 
 **Next chapters, in priority order** — each already has most of its material in hand:
 
-1. **Ch. 19** (ensemble DA) — the natural partner to chapter 18, which ends by pointing
-   at it: replace the fixed $\mathbf{B}$ with an ensemble estimate and buy
-   flow-dependence at the analysis time rather than only inside the window.
-   `chaoslib.assimilate.enkf_update`, `gaspari_cohn` and the inflation machinery are
-   tested and already used by chapter 20.
-2. **Ch. 17** (probabilistic forecast design) — `chaoslib.ensemble` is tested and unused
-   by any live chapter; chapters 11 and 21 both end by pointing at it.
-3. **Ch. 22** (verification) — the close of Part V, and chapters 13, 18 and 21 all defer
-   the observation-error problem to it.
+1. **Ch. 17** (probabilistic forecast design) — `chaoslib.ensemble` is tested and
+   still barely used: chapters 11, 19 and 21 all end by pointing at it, and chapter 19
+   treated the ensemble purely as a covariance estimator rather than as a forecast.
+2. **Ch. 22** (verification) — the close of Part V. Chapters 13, 18, 19 and 21 all
+   defer the observation-error problem to it.
+3. **Ch. 20's diet** — now unblocked; see the note below.
 
 ### A second decision on record: splitting chapter 20
 
@@ -384,8 +394,12 @@ would leave gaps. As chapters 18 and 19 are written they should take the corresp
 theory sections, and chapter 20 should shrink to cycling, analysis error and the
 logarithmic return — which is its real subject.
 
-**Status:** chapter 18 is now live and carries the variational theory in far more depth
-than chapter 20's section 3 does, so that section is now the redundant one. It has been
-left in place until chapter 19 exists, at which point chapter 20's sections 2--4 should
-be cut together and replaced by cross-references. Cutting them one at a time would leave
-chapter 20 with an EnKF section that assumes a 4D-Var section that is no longer there.
+**Status: now unblocked.** Chapters 18 and 19 are both live and each carries its
+theory in far more depth than chapter 20's sections 3 and 4 do. The condition for
+cutting has therefore been met: chapter 20's sections 2--4 should now be cut *together*
+and replaced by cross-references, leaving it as the cycling-and-return chapter it was
+always meant to be. Cutting them one at a time was never safe -- section 4 assumes
+section 3 -- which is why this waited for both neighbours rather than one.
+
+This is deliberately **not** done as part of chapter 19: it edits a live, tested chapter
+for tidiness rather than correctness, and it should be its own reviewable change.
