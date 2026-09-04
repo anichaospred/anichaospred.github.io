@@ -90,16 +90,54 @@ That distinction is not pedantry: linearising the continuous flow instead leaves
 $O(\Delta t)$ inconsistency that shows up as a *floor* in `tangent_linear_error`, and
 it was a real bug here.
 
+`gradient_test` is the check operational centres run before trusting an adjoint:
+$\Phi(\alpha)=[J(x_0+\alpha h)-J(x_0)]/(\alpha h^{\top}\nabla J)$ must approach 1.
+Plotted as $|\Phi-1|$ it makes a V — curvature on the right, cancellation error on the
+left — and **the diagnostic is the depth of the trough, not its existence**. A wrong
+gradient turns upward at small $\alpha$ too, because that branch comes from evaluating
+$J$ and knows nothing about the gradient; what a wrong gradient cannot do is descend.
+Measured in chapter 18: a correct gradient reaches $3\times10^{-8}$, one wrong by 1 %
+sits flat at $10^{-2}$.
+
 ## `assimilate` — state estimation
 
 `kalman_filter_update` (the linear-Gaussian optimum, used as the yardstick),
-`three_dvar_update`, `four_dvar_analysis` (L-BFGS-B on the adjoint gradient),
+`three_dvar_update`, `four_dvar_cost`, `four_dvar_hessian`,
+`incremental_four_dvar`, `four_dvar_analysis` (L-BFGS-B on the adjoint gradient),
 `enkf_update` (with inflation and optional localisation), `gaspari_cohn`,
 `analysis_rmse`.
 
+`four_dvar_cost` is public because the cost surface and the gradient are objects to
+look at, not only to minimise; `chaoslib.adjoint.gradient_test` consumes it directly.
+It returns `(inf, 0)` rather than `(nan, nan)` on a diverged trajectory, because a
+line search backs off from infinity and steps straight past NaN.
+
+`four_dvar_hessian` returns the Gauss-Newton Hessian
+$\mathbf{B}^{-1}+\sum_k\mathbf{M}_k^{\top}\mathbf{H}^{\top}\mathbf{R}^{-1}
+\mathbf{H}\mathbf{M}_k$, whose inverse is the analysis-error covariance. It depends
+on *when and where* the observations are, never on their values — which is what makes
+observation targeting possible — and it is flow-dependent even though $\mathbf{B}$ is
+fixed. Two exact checks anchor it: for linear dynamics, $\mathbf{M}\mathbf{A}
+\mathbf{M}^{\top}$ **is** the Kalman analysis covariance, and `incremental_four_dvar`
+with one outer iteration **is** the Kalman analysis mean, both to $10^{-15}$. They hold
+exactly rather than approximately because the tangent is stepped through the same RK4
+stages as the nonlinear model, so for a linear right-hand side the two are the same
+matrix polynomial.
+
+`incremental_four_dvar` is Gauss-Newton: the inner normal equations' right-hand side
+*is* minus the outer gradient, so the increment is
+$\delta x = -\mathbf{A}\nabla J$. Recognising that is worth more than memorising the
+algorithm — it explains at once why one outer iteration is exact for a linear model and
+why the scheme inherits Gauss-Newton's failure mode when the dropped second-derivative
+term is large. Its inner solve is a direct factorisation, honest at $n=3$ and impossible
+at $n=10^8$; operationally the inner loop is itself a conjugate-gradient minimisation.
+
 `four_dvar_analysis` uses a quasi-Newton minimiser deliberately: fixed-step steepest
 descent on this cost function diverges to overflow whenever $\mathbf{R}^{-1}$ is large,
-which is exactly the operationally relevant case.
+which is exactly the operationally relevant case. Pass a list as `history` to collect
+$J$ at each iterate — and take a running minimum before plotting it, because L-BFGS
+evaluates trial points that are worse and a plot of raw evaluations is not a convergence
+plot.
 
 ## `ensemble` — construction and verification
 

@@ -983,6 +983,291 @@ def test_four_dvar_reduces_the_distance_to_the_truth():
     assert np.linalg.norm(xa - truth0) < 0.25 * np.linalg.norm(xb - truth0)
 
 
+# --------------------------------------------------------------------------
+# chapter 18: variational assimilation as a minimisation problem
+#
+# The strongest tests here are the two exact equivalences with the Kalman
+# filter. Strong-constraint 4D-Var never forms a covariance matrix, and the
+# incremental form never even sees the nonlinear model inside its inner loop --
+# yet for linear dynamics both reproduce the Kalman analysis, and the inverse of
+# the Gauss-Newton Hessian reproduces the Kalman analysis *covariance*, to
+# machine precision. These hold exactly rather than approximately because
+# `tangent_linear_propagator` steps the tangent through the same RK4 stages as
+# the nonlinear model, so for a linear right-hand side the two are the same
+# matrix polynomial in the timestep.
+# --------------------------------------------------------------------------
+_LINEAR_A = np.array(
+    [[-0.5, 2.0, 0.0], [-2.0, -0.5, 0.3], [0.0, -0.3, -0.2]]
+)
+
+
+def _linear_rhs(t, x, **_params):
+    return _LINEAR_A @ np.asarray(x, dtype=float)
+
+
+def _linear_jacobian(x, **_params):
+    return _LINEAR_A
+
+
+@pytest.fixture
+def linear_window():
+    """A linear system, a window, and the pieces of one assimilation."""
+    return dict(
+        dt=0.01,
+        tau=0.7,
+        b_cov=np.array([[4.0, 1.0, 0.5], [1.0, 3.0, -0.4], [0.5, -0.4, 2.0]]),
+        h_op=np.array([[1.0, 0.0, 0.0], [0.0, 0.0, 1.0]]),
+        r_cov=np.diag([0.5, 0.8]),
+        xb=np.array([1.0, -2.0, 0.5]),
+        y=np.array([2.3, -0.4]),
+    )
+
+
+def test_four_dvar_hessian_inverts_to_the_kalman_analysis_covariance(linear_window):
+    r"""$\mathbf{M}\mathbf{A}\mathbf{M}^{\top}$ is the Kalman analysis covariance.
+
+    The textbook equivalence, and the reason 4D-Var is not merely a curve-fitting
+    scheme: although it propagates no covariance, the inverse Hessian of its cost
+    function *is* the analysis-error covariance, and pushing it to the end of the
+    window reproduces exactly what a Kalman filter would have computed there.
+    """
+    w = linear_window
+    propagator = adjoint.tangent_linear_propagator(
+        _linear_rhs, _linear_jacobian, w["xb"], w["tau"], dt=w["dt"]
+    )
+    grid = np.linspace(0.0, w["tau"], int(round(w["tau"] / w["dt"])) + 1)
+    xb_end = integrate.rk4(_linear_rhs, w["xb"], grid)[-1]
+    _, kalman_cov = assimilate.kalman_filter_update(
+        xb_end, propagator @ w["b_cov"] @ propagator.T, w["y"], w["h_op"], w["r_cov"]
+    )
+
+    hessian = assimilate.four_dvar_hessian(
+        _linear_rhs, _linear_jacobian, w["xb"], w["b_cov"], [w["tau"]],
+        w["h_op"], w["r_cov"], dt=w["dt"],
+    )
+    analysis_cov = np.linalg.inv(hessian)
+    assert np.allclose(
+        propagator @ analysis_cov @ propagator.T, kalman_cov, atol=1e-12
+    )
+
+
+def test_incremental_four_dvar_is_exact_in_one_outer_step_for_a_linear_model(
+    linear_window,
+):
+    """Gauss-Newton solves a quadratic problem in one step, and 4D-Var's is
+    quadratic when the model is linear. The analysis, propagated to the
+    observation time, must equal the Kalman analysis exactly."""
+    w = linear_window
+    xa, costs = assimilate.incremental_four_dvar(
+        _linear_rhs, _linear_jacobian, w["xb"], w["b_cov"], [(w["tau"], w["y"])],
+        w["h_op"], w["r_cov"], dt=w["dt"], outer_iterations=1,
+    )
+    propagator = adjoint.tangent_linear_propagator(
+        _linear_rhs, _linear_jacobian, w["xb"], w["tau"], dt=w["dt"]
+    )
+    grid = np.linspace(0.0, w["tau"], int(round(w["tau"] / w["dt"])) + 1)
+    xb_end = integrate.rk4(_linear_rhs, w["xb"], grid)[-1]
+    kalman, _ = assimilate.kalman_filter_update(
+        xb_end, propagator @ w["b_cov"] @ propagator.T, w["y"], w["h_op"], w["r_cov"]
+    )
+    assert np.allclose(integrate.rk4(_linear_rhs, xa, grid)[-1], kalman, atol=1e-12)
+    # And the cost really did go down, which `outer_iterations=1` does not
+    # guarantee a priori for a nonlinear model.
+    assert costs[-1] < costs[0]
+
+
+def test_four_dvar_hessian_does_not_depend_on_the_observed_values(linear_window):
+    """The analysis-error covariance can be computed before the observations
+    exist. That is what makes observation targeting (chapter 16) possible."""
+    w = linear_window
+    args = (_linear_rhs, _linear_jacobian, w["xb"], w["b_cov"], [0.0, 0.3, w["tau"]],
+            w["h_op"], w["r_cov"])
+    first = assimilate.four_dvar_hessian(*args, dt=w["dt"])
+    second = assimilate.four_dvar_hessian(*args, dt=w["dt"])
+    assert np.array_equal(first, second)
+    assert np.allclose(first, first.T)
+    assert np.all(np.linalg.eigvalsh(first) > 0.0)
+
+
+def test_gradient_test_makes_a_v_and_a_wrong_gradient_does_not():
+    r"""The operational adjoint check, and its diagnostic power.
+
+    A correct gradient gives $|\Phi-1|$ a floor near $\sqrt{\varepsilon}$ with
+    branches rising on *both* sides -- curvature on the right, cancellation error
+    on the left. A gradient wrong by 1 % instead **plateaus** at its own relative
+    error across the middle decades.
+
+    Both curves turn up at the smallest $\alpha$, because that branch comes from
+    evaluating $J$ and knows nothing about the gradient -- so the presence of a
+    left branch discriminates nothing. What discriminates is the *depth* of the
+    trough over the range where neither rounding nor curvature dominates:
+    $\alpha\in[4\times10^{-12}, 6\times10^{-7}]$ here, where the correct
+    gradient falls by five orders of magnitude and the wrong one is flat to
+    within 50 %.
+    """
+    dt = 0.01
+    rng = np.random.default_rng(0)
+    truth0 = np.array([-8.97, -2.81, 33.96])
+    h_op, r_cov, b_cov = np.eye(3), np.eye(3) * 4.0, np.eye(3) * 9.0
+    xb = truth0 + rng.normal(0.0, 3.0, 3)
+    observations = []
+    for t_obs in (0.0, 0.2, 0.4, 0.6, 0.8):
+        state = truth0 if t_obs == 0.0 else integrate.rk4(
+            systems.lorenz63, truth0,
+            np.linspace(0.0, t_obs, int(round(t_obs / dt)) + 1),
+        )[-1]
+        observations.append((t_obs, state + rng.normal(0.0, 2.0, 3)))
+
+    def cost_and_gradient(x0):
+        return assimilate.four_dvar_cost(
+            systems.lorenz63, systems.lorenz63_jacobian, x0, xb, b_cov,
+            observations, h_op, r_cov, dt=dt,
+        )
+
+    def wrong_by_one_percent(x0):
+        value, grad = cost_and_gradient(x0)
+        return value, grad * 1.01
+
+    alphas, phi = adjoint.gradient_test(cost_and_gradient, xb)
+    error = np.abs(phi - 1.0)
+    _, phi_wrong = adjoint.gradient_test(wrong_by_one_percent, xb)
+    error_wrong = np.abs(phi_wrong - 1.0)
+
+    assert error.min() < 1e-6
+    # The right branch is the O(alpha) curvature term: halving alpha halves it.
+    assert error[-1] / error[-2] == pytest.approx(alphas[-1] / alphas[-2], rel=0.2)
+    # Both curves rise at the smallest alpha: that branch is cancellation error
+    # in J, and is the same for both gradients.
+    assert error[0] > 1e-2 and error_wrong[0] > 1e-2
+    # The discriminant, over the decades where neither end dominates.
+    middle = slice(4, 13)
+    assert error[middle].max() / error[middle].min() > 1e2
+    assert error_wrong[middle].max() / error_wrong[middle].min() < 3.0
+    # And the plateau sits at the gradient's own relative error.
+    assert float(np.median(error_wrong[middle])) == pytest.approx(0.01, rel=0.15)
+
+
+def test_four_dvar_corrects_components_that_three_dvar_cannot_touch():
+    """Observe $x$ alone. With a diagonal $\\mathbf{B}$, 3D-Var leaves $y$ and
+    $z$ *bitwise* unchanged -- it has no mechanism to reach them. 4D-Var reaches
+    them through the dynamics, because the trajectory launched from $x_0$ depends
+    on all three components and the observations are spread over a window.
+
+    This is the model-as-strong-constraint doing the work, and it is the reason
+    4D-Var can assimilate radiances, radar reflectivity and GPS bending angles --
+    quantities that are not model variables at all.
+    """
+    dt = 0.01
+    spun = integrate.rk4(
+        systems.lorenz63, np.array([1.0, 1.0, 20.0]),
+        integrate.trajectory_grid(30.0, dt),
+    )[2000:]
+    b_cov = np.cov(spun.T) / 4.0
+    h_op, r_cov = np.array([[1.0, 0.0, 0.0]]), np.array([[1.0]])
+    rng = np.random.default_rng(1)
+
+    background, three, four = [], [], []
+    for start in range(0, 800, 200):
+        truth0 = spun[start]
+        xb = truth0 + rng.multivariate_normal(np.zeros(3), b_cov)
+        observations = []
+        for t_obs in np.linspace(0.0, 1.0, 11):
+            state = truth0 if t_obs <= 0.0 else integrate.rk4(
+                systems.lorenz63, truth0,
+                np.linspace(0.0, t_obs, int(round(t_obs / dt)) + 1),
+            )[-1]
+            observations.append((t_obs, h_op @ state + rng.normal(0.0, 1.0, 1)))
+
+        xa3 = assimilate.three_dvar_update(
+            xb, np.diag(np.diag(b_cov)), observations[0][1], h_op, r_cov
+        )
+        xa4 = assimilate.four_dvar_analysis(
+            systems.lorenz63, systems.lorenz63_jacobian, xb, b_cov,
+            observations, h_op, r_cov, dt=dt, max_iterations=120,
+        )
+        background.append(xb[1:] - truth0[1:])
+        three.append(xa3[1:] - truth0[1:])
+        four.append(xa4[1:] - truth0[1:])
+
+    assert np.array_equal(np.asarray(three), np.asarray(background))
+    assert np.sqrt(np.mean(np.square(four))) < 0.6 * np.sqrt(
+        np.mean(np.square(background))
+    )
+
+
+def test_analysis_error_concentrates_in_the_directions_that_do_not_grow():
+    r"""4D-Var's analysis error lies in the *stable* subspace.
+
+    The growing directions grow into the observations over the window, so the
+    window constrains them best; what survives is error along directions the flow
+    contracts. Quantitatively, the **least** uncertain axis of $\mathbf{A}$ lies
+    close to the leading singular vector of chapter 16, and the **most** uncertain
+    axis is nearly orthogonal to it.
+
+    This is the property a fixed $\mathbf{B}$ cannot have, and it is why 4D-Var
+    error does not simply reappear amplified in the next forecast.
+    """
+    dt, window = 0.01, 0.5
+    times = [0.0, 0.1, 0.2, 0.3, 0.4, 0.5]
+    spun = integrate.rk4(
+        systems.lorenz63, np.array([1.0, 1.0, 20.0]),
+        integrate.trajectory_grid(40.0, dt),
+    )[2000:]
+    b_cov = np.cov(spun.T) / 4.0
+    h_op, r_cov = np.eye(3), np.eye(3) * 4.0
+
+    aligned, orthogonal = [], []
+    for start in range(0, 1600, 200):
+        state = spun[start]
+        analysis_cov = np.linalg.inv(assimilate.four_dvar_hessian(
+            systems.lorenz63, systems.lorenz63_jacobian, state, b_cov, times,
+            h_op, r_cov, dt=dt,
+        ))
+        values, vectors = np.linalg.eigh(analysis_cov)
+        propagator = adjoint.tangent_linear_propagator(
+            systems.lorenz63, systems.lorenz63_jacobian, state, window, dt=dt
+        )
+        _, initial_vectors, _ = adjoint.singular_vectors(propagator, n_vectors=1)
+        leading = initial_vectors[:, 0]
+        aligned.append(abs(float(vectors[:, 0] @ leading)))
+        orthogonal.append(abs(float(vectors[:, -1] @ leading)))
+        assert values[-1] > values[0]
+
+    # cos(45 deg) = 0.707; cos(75 deg) = 0.259.
+    assert np.median(aligned) > 0.707
+    assert np.median(orthogonal) < 0.259
+
+
+def test_four_dvar_analysis_covariance_is_flow_dependent_where_three_dvar_is_not():
+    """3D-Var's analysis-error ellipse is one shape, everywhere, forever.
+    4D-Var's is rebuilt from the local propagators at every point."""
+    dt = 0.01
+    times = [0.0, 0.1, 0.2, 0.3, 0.4, 0.5]
+    spun = integrate.rk4(
+        systems.lorenz63, np.array([1.0, 1.0, 20.0]),
+        integrate.trajectory_grid(40.0, dt),
+    )[2000:]
+    b_cov = np.cov(spun.T) / 4.0
+    h_op, r_cov = np.eye(3), np.eye(3) * 4.0
+
+    three_dvar_cov = np.linalg.inv(
+        np.linalg.inv(b_cov) + h_op.T @ np.linalg.inv(r_cov) @ h_op
+    )
+    fixed = np.linalg.eigvalsh(three_dvar_cov)
+    fixed_anisotropy = np.sqrt(fixed[-1] / fixed[0])
+
+    anisotropies = []
+    for start in range(0, 1600, 200):
+        values = np.linalg.eigvalsh(np.linalg.inv(assimilate.four_dvar_hessian(
+            systems.lorenz63, systems.lorenz63_jacobian, spun[start], b_cov,
+            times, h_op, r_cov, dt=dt,
+        )))
+        anisotropies.append(float(np.sqrt(values[-1] / values[0])))
+
+    assert max(anisotropies) / min(anisotropies) > 1.5
+    assert min(anisotropies) > fixed_anisotropy
+
+
 # ==========================================================================
 # ensemble
 # ==========================================================================

@@ -34,6 +34,9 @@ Jacobian = Callable[..., Array]
 __all__ = [
     "kalman_filter_update",
     "three_dvar_update",
+    "four_dvar_cost",
+    "four_dvar_hessian",
+    "incremental_four_dvar",
     "four_dvar_analysis",
     "enkf_update",
     "gaspari_cohn",
@@ -87,6 +90,216 @@ def three_dvar_update(
     return xa
 
 
+def four_dvar_cost(
+    rhs: RHS,
+    jacobian: Jacobian,
+    x0: Array,
+    xb: Array,
+    b_cov: Array,
+    observations: list[tuple[float, Array]],
+    h_op: Array,
+    r_cov: Array,
+    dt: float = 0.01,
+    **params: float,
+) -> tuple[float, Array]:
+    r"""The 4D-Var cost function and its adjoint gradient at ``x0``.
+
+    .. math::
+        J(x_0) = \tfrac12 (x_0-x^b)^{\top}\mathbf{B}^{-1}(x_0-x^b)
+          + \tfrac12 \sum_k d_k^{\top}\mathbf{R}^{-1} d_k,
+        \qquad d_k = y_k - \mathbf{H}\mathcal{M}_{0\to k}(x_0)
+
+    with gradient
+
+    .. math::
+        \nabla J = \mathbf{B}^{-1}(x_0-x^b)
+          - \sum_k \mathbf{M}_k^{\top}\mathbf{H}^{\top}\mathbf{R}^{-1} d_k .
+
+    The sum runs over observation times inside the window, measured from the
+    window start, and :math:`x_k` is the *model trajectory* launched from
+    :math:`x_0` -- so the model enters as a strong constraint, and information
+    from an observation of one variable reaches every variable the dynamics
+    couple it to.
+
+    Each term of the gradient costs **one adjoint application**, not one model
+    run per degree of freedom. That asymmetry is the entire reason variational
+    assimilation is affordable at operational size.
+
+    Public, and not merely an implementation detail of
+    :func:`four_dvar_analysis`, because the cost surface and the gradient are
+    objects worth looking at rather than only minimising:
+    :func:`chaoslib.adjoint.gradient_test` consumes this function directly.
+
+    A diverged trajectory returns ``(inf, 0)`` rather than ``(nan, nan)``. A line
+    search treats infinity as a barrier and backs off; NaN it will step straight
+    past, and the minimiser then wanders in a region where the cost is undefined.
+
+    Returns ``(J, grad)``.
+    """
+    x0 = np.asarray(x0, dtype=float).ravel()
+    xb = np.asarray(xb, dtype=float).ravel()
+    h_op = np.atleast_2d(np.asarray(h_op, dtype=float))
+    b_inv = np.linalg.inv(np.atleast_2d(np.asarray(b_cov, dtype=float)))
+    r_inv = np.linalg.inv(np.atleast_2d(np.asarray(r_cov, dtype=float)))
+
+    departure = x0 - xb
+    cost = 0.5 * float(departure @ (b_inv @ departure))
+    grad = b_inv @ departure
+
+    for t_raw, y_raw in observations:
+        t_obs = float(t_raw)
+        y_obs = np.asarray(y_raw, dtype=float).ravel()
+        if t_obs <= 0.0:
+            # Observation at the window start: no propagation, and the
+            # propagator below is the identity.
+            x_at_obs = x0
+        else:
+            n_steps = max(1, int(round(t_obs / dt)))
+            # linspace, not arange*dt: the trajectory must end exactly at
+            # t_obs so that it matches the tangent-linear propagator.
+            grid = np.linspace(0.0, t_obs, n_steps + 1)
+            x_at_obs = rk4(rhs, x0, grid, **params)[-1]
+        innovation = y_obs - h_op @ x_at_obs
+        weighted = r_inv @ innovation
+        cost += 0.5 * float(innovation @ weighted)
+        propagator = tangent_linear_propagator(
+            rhs, jacobian, x0, t_obs, dt=dt, **params
+        )
+        grad -= propagator.T @ (h_op.T @ weighted)
+
+    if not np.isfinite(cost) or not np.all(np.isfinite(grad)):
+        return float("inf"), np.zeros_like(x0)
+    return cost, grad
+
+
+def four_dvar_hessian(
+    rhs: RHS,
+    jacobian: Jacobian,
+    x0: Array,
+    b_cov: Array,
+    observation_times: list[float],
+    h_op: Array,
+    r_cov: Array,
+    dt: float = 0.01,
+    **params: float,
+) -> Array:
+    r"""The Gauss-Newton Hessian of the 4D-Var cost at ``x0``.
+
+    .. math::
+        \mathbf{A}^{-1} = \mathbf{B}^{-1}
+          + \sum_k \mathbf{M}_k^{\top}\mathbf{H}^{\top}\mathbf{R}^{-1}
+                   \mathbf{H}\mathbf{M}_k
+
+    Its inverse :math:`\mathbf{A}` is the analysis-error covariance under the
+    usual Gaussian assumptions, and two properties of it carry the chapter.
+
+    **It does not depend on the observed values.** Only on where and when the
+    observations are taken, and on the trajectory. So the analysis uncertainty
+    can be computed *before* any observation exists, which is what makes
+    observation-targeting studies (chapter 16) possible at all.
+
+    **It is flow-dependent even though** :math:`\mathbf{B}` **is not.** The
+    propagators carry the local dynamics into it, so the analysis-error
+    covariance rotates with the flow. The 3D-Var Hessian, by contrast, is
+    :math:`\mathbf{B}^{-1}+\mathbf{H}^{\top}\mathbf{R}^{-1}\mathbf{H}` at every
+    point of the attractor and at every time, forever. This is the structural
+    difference between the two schemes, and it survives the fact that they
+    minimise the same-looking cost function.
+
+    Gauss-Newton because the term involving the model's *second* derivative is
+    dropped. That term is what can make the true Hessian indefinite once the
+    window is long enough for nonlinearity to matter; dropping it is precisely
+    what keeps the incremental inner problem convex, and it is an approximation,
+    not an identity.
+    """
+    x0 = np.asarray(x0, dtype=float).ravel()
+    h_op = np.atleast_2d(np.asarray(h_op, dtype=float))
+    r_inv = np.linalg.inv(np.atleast_2d(np.asarray(r_cov, dtype=float)))
+    hessian = np.linalg.inv(np.atleast_2d(np.asarray(b_cov, dtype=float)))
+
+    for t_raw in observation_times:
+        t_obs = float(t_raw)
+        propagator = tangent_linear_propagator(
+            rhs, jacobian, x0, max(t_obs, 0.0), dt=dt, **params
+        )
+        forward = h_op @ propagator
+        hessian = hessian + forward.T @ (r_inv @ forward)
+    return hessian
+
+
+def incremental_four_dvar(
+    rhs: RHS,
+    jacobian: Jacobian,
+    xb: Array,
+    b_cov: Array,
+    observations: list[tuple[float, Array]],
+    h_op: Array,
+    r_cov: Array,
+    dt: float = 0.01,
+    outer_iterations: int = 3,
+    **params: float,
+) -> tuple[Array, list[float]]:
+    r"""Incremental 4D-Var: a short sequence of quadratic inner problems.
+
+    The operational formulation. Rather than minimising the nonlinear cost
+    directly, linearise about the current trajectory and minimise for an
+    *increment*:
+
+    .. math::
+        J(\delta x) = \tfrac12(\delta x + x^{(k)} - x^b)^{\top}\mathbf{B}^{-1}
+                      (\cdots)
+          + \tfrac12\sum_k (d_k - \mathbf{H}\mathbf{M}_k\delta x)^{\top}
+            \mathbf{R}^{-1}(\cdots),
+
+    which is quadratic, hence convex, hence solvable by a linear method whose
+    convergence does not depend on how nonlinear the model is. The outer loop
+    re-linearises and repeats.
+
+    Written out, this is exactly **Gauss-Newton**: the increment solves
+    :math:`\mathbf{A}^{-1}\delta x = -\nabla J(x^{(k)})` with
+    :math:`\mathbf{A}^{-1}` the Hessian of :func:`four_dvar_hessian`, because
+    the right-hand side of the inner normal equations *is* minus the outer
+    gradient. Recognising that is worth more than memorising the incremental
+    algorithm: it says at once that one outer iteration is exact for a linear
+    model, that convergence is quadratic near the solution, and that the whole
+    scheme inherits Gauss-Newton's failure mode when the dropped
+    second-derivative term is large.
+
+    Here the inner problem is solved by a direct factorisation, which is honest
+    at :math:`n=3` and impossible at :math:`n=10^8`; operationally the inner
+    loop is itself an iterative conjugate-gradient minimisation that never forms
+    :math:`\mathbf{A}^{-1}` and never applies :math:`\mathbf{M}` more than a few
+    dozen times.
+
+    Returns ``(xa, costs)``, where ``costs`` holds :math:`J` at the start of each
+    outer iteration and once more at the analysis -- so it has
+    ``outer_iterations + 1`` entries and its decrease is the convergence trace.
+    """
+    x = np.asarray(xb, dtype=float).ravel().copy()
+    xb = np.asarray(xb, dtype=float).ravel()
+    times = [float(t) for t, _ in observations]
+    costs: list[float] = []
+
+    for _ in range(int(outer_iterations)):
+        cost, grad = four_dvar_cost(
+            rhs, jacobian, x, xb, b_cov, observations, h_op, r_cov,
+            dt=dt, **params,
+        )
+        costs.append(cost)
+        if not np.isfinite(cost):
+            break
+        hessian = four_dvar_hessian(
+            rhs, jacobian, x, b_cov, times, h_op, r_cov, dt=dt, **params
+        )
+        x = x + np.linalg.solve(hessian, -grad)
+
+    final, _ = four_dvar_cost(
+        rhs, jacobian, x, xb, b_cov, observations, h_op, r_cov, dt=dt, **params
+    )
+    costs.append(final)
+    return x, costs
+
+
 def four_dvar_analysis(
     rhs: RHS,
     jacobian: Jacobian,
@@ -97,83 +310,35 @@ def four_dvar_analysis(
     r_cov: Array,
     dt: float = 0.01,
     max_iterations: int = 60,
+    history: list[float] | None = None,
     **params: float,
 ) -> Array:
-    r"""Incremental 4D-Var over an assimilation window.
+    r"""Strong-constraint 4D-Var over an assimilation window.
 
-    Minimises
-
-    .. math::
-        J(x_0) = \tfrac12 (x_0-x^b)^{\top}\mathbf{B}^{-1}(x_0-x^b)
-          + \tfrac12 \sum_k (y_k - \mathbf{H}x_k)^{\top}\mathbf{R}^{-1}
-                            (y_k - \mathbf{H}x_k)
-
-    where the sum runs over observation times inside the window and :math:`x_k`
-    is the *model trajectory* launched from :math:`x_0`. The gradient
-
-    .. math::
-        \nabla J = \mathbf{B}^{-1}(x_0-x^b)
-          - \sum_k \mathbf{M}_k^{\top}\mathbf{H}^{\top}\mathbf{R}^{-1}
-                   (y_k - \mathbf{H}x_k)
-
-    costs one adjoint application per observation time -- *not* one model run per
-    degree of freedom. That asymmetry is the entire reason variational
-    assimilation is affordable at operational size.
-
-    ``observations`` is a list of ``(time, y)`` pairs with times measured from
-    the window start.
+    Minimises :func:`four_dvar_cost` from the background, returning the analysed
+    initial state. Pass a list as ``history`` to collect :math:`J` at each
+    iterate.
 
     Minimised with L-BFGS-B on the analytic gradient. Fixed-step steepest
     descent is not a viable substitute here: with tight observation errors
     :math:`\mathbf{R}^{-1}` makes the gradient large, and any step size big
     enough to converge in a reasonable number of iterations sends the Lorenz
     trajectory to overflow. Real systems use a quasi-Newton or conjugate-gradient
-    minimiser for exactly this reason.
-
-    Returns the analysed initial state.
+    minimiser for exactly this reason -- or the Gauss-Newton outer loop of
+    :func:`incremental_four_dvar`.
     """
     from scipy.optimize import minimize
 
     xb = np.asarray(xb, dtype=float).ravel()
-    b_cov = np.atleast_2d(np.asarray(b_cov, dtype=float))
-    h_op = np.atleast_2d(np.asarray(h_op, dtype=float))
-    r_inv = np.linalg.inv(np.atleast_2d(np.asarray(r_cov, dtype=float)))
-    b_inv = np.linalg.inv(b_cov)
-
-    prepared = [
-        (float(t_obs), np.asarray(y_obs, dtype=float).ravel())
-        for t_obs, y_obs in observations
-    ]
 
     def cost_and_gradient(x0: Array) -> tuple[float, Array]:
-        departure = x0 - xb
-        cost = 0.5 * float(departure @ (b_inv @ departure))
-        grad = b_inv @ departure
-
-        for t_obs, y_obs in prepared:
-            if t_obs <= 0.0:
-                # Observation at the window start: no propagation, and the
-                # propagator below is the identity.
-                x_at_obs = x0
-            else:
-                n_steps = max(1, int(round(t_obs / dt)))
-                # linspace, not arange*dt: the trajectory must end exactly at
-                # t_obs so that it matches the tangent-linear propagator.
-                grid = np.linspace(0.0, t_obs, n_steps + 1)
-                x_at_obs = rk4(rhs, x0, grid, **params)[-1]
-            innovation = y_obs - h_op @ x_at_obs
-            weighted = r_inv @ innovation
-            cost += 0.5 * float(innovation @ weighted)
-            propagator = tangent_linear_propagator(
-                rhs, jacobian, x0, t_obs, dt=dt, **params
-            )
-            grad -= propagator.T @ (h_op.T @ weighted)
-
-        if not np.isfinite(cost) or not np.all(np.isfinite(grad)):
-            # A diverged trajectory must be reported as a barrier, not as NaN,
-            # or the line search will happily step further into the blow-up.
-            return float("inf"), np.zeros_like(x0)
-        return cost, grad
+        value, grad = four_dvar_cost(
+            rhs, jacobian, x0, xb, b_cov, observations, h_op, r_cov,
+            dt=dt, **params,
+        )
+        if history is not None:
+            history.append(value)
+        return value, grad
 
     result = minimize(
         cost_and_gradient,
