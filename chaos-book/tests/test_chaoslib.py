@@ -1268,6 +1268,228 @@ def test_four_dvar_analysis_covariance_is_flow_dependent_where_three_dvar_is_not
     assert min(anisotropies) > fixed_anisotropy
 
 
+# --------------------------------------------------------------------------
+# chapter 19: ensemble assimilation
+#
+# The ETKF's anchor is that it is *exactly* the Kalman filter for the
+# covariance the ensemble actually has. That holds for any ensemble size,
+# including k < n where the sample covariance is singular, and it is what
+# separates a square-root filter from an approximation to one.
+# --------------------------------------------------------------------------
+@pytest.fixture
+def small_observing_system():
+    rng = np.random.default_rng(0)
+    n_state, n_obs = 6, 4
+    h_op = np.zeros((n_obs, n_state))
+    h_op[np.arange(n_obs), [0, 2, 3, 5]] = 1.0
+    return dict(
+        h_op=h_op,
+        r_cov=np.diag(rng.uniform(0.5, 2.0, n_obs)),
+        y=rng.normal(size=n_obs),
+        n_state=n_state,
+    )
+
+
+@pytest.mark.parametrize("n_members", [4, 7, 12, 40])
+def test_etkf_is_the_kalman_filter_for_the_sample_covariance(
+    small_observing_system, n_members
+):
+    """Mean *and* covariance, to machine precision, at every ensemble size.
+
+    Note k = 4 < n = 6: the sample covariance is singular there and the
+    identity still holds, because the ETKF works in the ensemble's own
+    (k-1)-dimensional subspace rather than inverting anything of size n.
+    """
+    s = small_observing_system
+    rng = np.random.default_rng(n_members)
+    ensemble = rng.normal(size=(n_members, s["n_state"])) * 1.5
+    sample_cov = np.cov(ensemble.T, ddof=1)
+
+    kalman_mean, kalman_cov = assimilate.kalman_filter_update(
+        ensemble.mean(axis=0), sample_cov, s["y"], s["h_op"], s["r_cov"]
+    )
+    analysis = assimilate.etkf_update(ensemble, s["y"], s["h_op"], s["r_cov"])
+
+    assert np.allclose(analysis.mean(axis=0), kalman_mean, atol=1e-12)
+    assert np.allclose(np.cov(analysis.T, ddof=1), kalman_cov, atol=1e-11)
+
+
+def test_etkf_increment_lies_exactly_in_the_ensemble_span(small_observing_system):
+    r"""The rank problem, stated exactly.
+
+    A global ensemble filter can only move the state in directions its members
+    already disagree about: the increment is $\mathbf{X}^b$ times something, so
+    it lies in the span of the $k-1$ ensemble perturbations. No amount of
+    covariance tapering changes this, which is why the *local* filter exists.
+    """
+    s = small_observing_system
+    rng = np.random.default_rng(3)
+    members = rng.normal(size=(8, s["n_state"])) * 1.5
+    increment = assimilate.etkf_update(
+        members, s["y"], s["h_op"], s["r_cov"]
+    ) - members
+    assert ensemble.outside_span_fraction(increment, members) < 1e-12
+
+
+def test_letkf_without_weights_reduces_to_the_etkf():
+    """A localised filter with every weight equal is the global one. If this
+    fails, the localisation is doing something other than weighting."""
+    rng = np.random.default_rng(5)
+    n_state, n_members = 12, 7
+    ensemble = rng.normal(size=(n_members, n_state))
+    y = rng.normal(size=n_state)
+    h_op = np.eye(n_state)
+    sigma_sq = 1.3
+
+    localised = assimilate.letkf_update(ensemble, y, h_op, sigma_sq)
+    global_ = assimilate.etkf_update(
+        ensemble, y, h_op, np.eye(n_state) * sigma_sq
+    )
+    assert np.allclose(localised, global_, atol=1e-11)
+
+
+def test_localisation_moves_the_increment_out_of_the_ensemble_span():
+    r"""And this is what localisation is *for*.
+
+    The LETKF solves $n$ separate $k$-dimensional problems, so the global
+    increment it assembles need not lie in the ensemble span at all. At
+    $k=10$ on a 40-site ring more than a third of it lies outside -- directions
+    the ensemble could not have represented, being corrected anyway.
+    """
+    rng = np.random.default_rng(7)
+    n_state, n_members = 40, 10
+    members = rng.normal(size=(n_members, n_state))
+    y = rng.normal(size=n_state)
+    h_op = np.eye(n_state)
+    weights = assimilate.ring_localisation(n_state, 4.0)
+
+    increment = assimilate.letkf_update(
+        members, y, h_op, 1.0, weights=weights
+    ) - members
+    assert ensemble.outside_span_fraction(increment, members) > 0.3
+
+
+def test_outside_span_fraction_is_stable_across_ensemble_sizes():
+    """The diagnostic must not itself be the source of the answer.
+
+    Built with `np.linalg.pinv`, this measurement returned ~1e-2 instead of 0 at
+    three of seven ensemble sizes: the perturbation matrix is deliberately rank
+    deficient, and when its numerically-zero singular value lands just above
+    pinv's relative cutoff it is retained and inverted to ~1e13, giving the
+    projector a spurious direction with enormous weight. The explicit SVD
+    projector is machine-precision at every size, which is what this asserts.
+    """
+    rng = np.random.default_rng(2000)
+    n_state = 40
+    pool = rng.normal(size=(40, n_state))
+    h_op = np.eye(n_state)
+    y = rng.normal(size=n_state)
+    for n_members in (5, 8, 10, 15, 20, 30, 40):
+        members = pool[:n_members] + rng.normal(0.0, 0.3, (n_members, n_state))
+        increment = assimilate.letkf_update(
+            members, y, h_op, 1.0, weights=None
+        ) - members
+        assert ensemble.outside_span_fraction(increment, members) < 1e-11
+
+
+def test_etkf_transform_preserves_the_analysis_mean():
+    r"""The symmetric square root is not interchangeable with a Cholesky factor.
+
+    Both satisfy $\mathbf{W}\mathbf{W}^{\top} = (k-1)\tilde{\mathbf{P}}^a$, but
+    only the symmetric one has rows summing to zero after the mean update, so
+    only it leaves the analysis mean equal to $\bar x^b + \mathbf{X}^b\bar w^a$.
+    A Cholesky factor shifts the mean, and the shift is easy to miss because the
+    analysis covariance comes out right either way.
+    """
+    rng = np.random.default_rng(11)
+    n_state, n_members = 5, 9
+    ensemble = rng.normal(size=(n_members, n_state))
+    y = rng.normal(size=n_state)
+    h_op, r_cov = np.eye(n_state), np.eye(n_state) * 0.7
+
+    analysis = assimilate.etkf_update(ensemble, y, h_op, r_cov)
+    perturbations = analysis - analysis.mean(axis=0)
+    # The mean of the transformed perturbations is zero by construction; the
+    # substantive claim is that the mean matches the Kalman mean exactly, which
+    # a triangular root would break.
+    kalman_mean, _ = assimilate.kalman_filter_update(
+        ensemble.mean(axis=0), np.cov(ensemble.T, ddof=1), y, h_op, r_cov
+    )
+    assert np.allclose(analysis.mean(axis=0), kalman_mean, atol=1e-12)
+    assert np.abs(perturbations.mean(axis=0)).max() < 1e-12
+
+
+def test_sample_correlation_error_falls_as_one_over_root_k():
+    r"""Spurious long-range correlations scale as $k^{-1/2}$, with unit constant.
+
+    The reason localisation is not optional. Sampling a known correlation matrix
+    with $k$ members, the RMS error in the far-field entries is
+    $1.00/\sqrt{k}$ to within a few per cent over five doublings -- so halving
+    the noise costs four times the ensemble, and the ensemble is the expensive
+    part of an operational system.
+    """
+    n_state = 40
+    rng = np.random.default_rng(0)
+    # A known, non-trivial correlation matrix on a ring, so the far field is
+    # genuinely small and the error being measured is genuinely sampling noise.
+    truth_corr = assimilate.ring_localisation(n_state, 8.0)
+    factor = np.linalg.cholesky(
+        truth_corr + 1e-9 * np.eye(n_state)
+    )
+    index = np.arange(n_state)
+    separation = np.abs(index[:, None] - index[None, :])
+    separation = np.minimum(separation, n_state - separation)
+    far = separation >= 12
+    assert np.abs(truth_corr[far]).max() == 0.0
+
+    ratios = []
+    for n_members in (10, 20, 40, 80, 160):
+        errors = []
+        for trial in range(12):
+            draw = rng.normal(size=(n_members, n_state)) @ factor.T
+            errors.append(np.corrcoef(draw.T)[far])
+        rms = float(np.sqrt(np.mean(np.square(np.concatenate(errors)))))
+        ratios.append(rms * np.sqrt(n_members))
+    assert np.allclose(ratios, 1.0, rtol=0.12)
+
+
+def test_hybrid_covariance_interpolates_and_is_full_rank():
+    """beta = 1 is the ensemble covariance, beta = 0 the static one, and
+    anything in between is full rank even when the ensemble is not."""
+    rng = np.random.default_rng(13)
+    n_state, n_members = 20, 6
+    ensemble = rng.normal(size=(n_members, n_state))
+    static = assimilate.ring_localisation(n_state, 6.0) + 1e-6 * np.eye(n_state)
+    ens_cov = np.cov(ensemble.T, ddof=1)
+
+    assert np.allclose(
+        assimilate.hybrid_covariance(ensemble, static, 1.0), ens_cov
+    )
+    assert np.allclose(
+        assimilate.hybrid_covariance(ensemble, static, 0.0), static
+    )
+    assert np.linalg.matrix_rank(ens_cov, tol=1e-9) == n_members - 1
+    blended = assimilate.hybrid_covariance(ensemble, static, 0.5)
+    assert np.linalg.matrix_rank(blended, tol=1e-9) == n_state
+    with pytest.raises(ValueError):
+        assimilate.hybrid_covariance(ensemble, static, 1.5)
+
+
+def test_ring_localisation_is_circulant_and_wraps_around():
+    """Site 0 and site N-1 are neighbours on the Lorenz 96 ring. A matrix built
+    from |i-j| without the wrap is not circulant, which makes two arbitrary
+    sites of a homogeneous system special."""
+    n_state = 40
+    weights = assimilate.ring_localisation(n_state, 6.0)
+    assert np.allclose(weights, weights.T)
+    assert np.allclose(np.diag(weights), 1.0)
+    # Circulant: every row is the previous one rotated by one.
+    for row in range(1, n_state):
+        assert np.allclose(weights[row], np.roll(weights[0], row))
+    assert weights[0, n_state - 1] == pytest.approx(weights[0, 1])
+    assert weights[0, n_state // 2] == 0.0
+
+
 # ==========================================================================
 # ensemble
 # ==========================================================================

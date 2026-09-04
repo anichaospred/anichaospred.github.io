@@ -104,8 +104,9 @@ sits flat at $10^{-2}$.
 `kalman_filter_update` (the linear-Gaussian optimum, used as the yardstick),
 `three_dvar_update`, `four_dvar_cost`, `four_dvar_hessian`,
 `incremental_four_dvar`, `four_dvar_analysis` (L-BFGS-B on the adjoint gradient),
-`enkf_update` (with inflation and optional localisation), `gaspari_cohn`,
-`analysis_rmse`.
+`enkf_update` (stochastic, with inflation, optional localisation and an optional
+`background_cov` override), `etkf_update`, `letkf_update`, `hybrid_covariance`,
+`ring_localisation`, `gaspari_cohn`, `analysis_rmse`.
 
 `four_dvar_cost` is public because the cost surface and the gradient are objects to
 look at, not only to minimise; `chaoslib.adjoint.gradient_test` consumes it directly.
@@ -138,6 +139,38 @@ which is exactly the operationally relevant case. Pass a list as `history` to co
 $J$ at each iterate — and take a running minimum before plotting it, because L-BFGS
 evaluates trial points that are worse and a plot of raw evaluations is not a convergence
 plot.
+
+### The ensemble filters
+
+`etkf_update` is the deterministic square-root filter. Its anchor is exact and holds at
+**every** ensemble size, including $k < n$ where the sample covariance is singular: the
+ETKF analysis mean and covariance are the Kalman filter's *for the covariance the ensemble
+actually has*, to $10^{-11}$. That is what distinguishes a square-root filter from an
+approximation to one. It uses the **symmetric** matrix square root, not a Cholesky
+factor — both satisfy $\mathbf{W}\mathbf{W}^{\top}=(k-1)\tilde{\mathbf{P}}^a$, but only
+the symmetric one leaves the analysis mean where the update put it, and a triangular
+factor shifts the mean while still giving the right covariance, which is easy to miss.
+
+`letkf_update` solves one ETKF per state variable, scaling $\mathbf{R}^{-1}$ by a
+distance weight — R-localisation, requiring uncorrelated observation errors, which is why
+it takes a scalar `obs_variance` rather than a matrix. It is a genuinely different
+operation from covariance localisation, and the difference is about **rank**. A global
+filter's increment lies *exactly* in the span of the $k-1$ ensemble perturbations
+(verified to $10^{-12}$), and no amount of tapering in covariance space changes that; the
+local filter assembles its increment from $n$ separate problems, and at $k=10$ on a
+40-site ring more than a third of it lies outside the ensemble span.
+
+`hybrid_covariance` is the other route out of rank deficiency:
+$\beta\mathbf{P}^e+(1-\beta)\mathbf{B}$ is full rank for any $\beta<1$ because
+$\mathbf{B}$ is. Pass the result as `enkf_update(..., background_cov=...)`. **The static
+covariance must be tuned**, not just climatological: on Lorenz 96 raw climatology has a
+spread of 3.6 against a background error near 0.3, and using it unscaled makes pure
+3D-Var twice as bad as it needs to be — which would flatter every hybrid measured
+against it.
+
+`ring_localisation` builds the Gaspari–Cohn matrix for a periodic ring, with
+$\min(|i-j|, N-|i-j|)$. Building it from $|i-j|$ instead gives a non-circulant matrix,
+which quietly makes two arbitrary sites of a homogeneous system special.
 
 ## `ensemble` — construction and verification
 

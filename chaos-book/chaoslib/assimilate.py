@@ -39,6 +39,10 @@ __all__ = [
     "incremental_four_dvar",
     "four_dvar_analysis",
     "enkf_update",
+    "etkf_update",
+    "letkf_update",
+    "hybrid_covariance",
+    "ring_localisation",
     "gaspari_cohn",
     "analysis_rmse",
 ]
@@ -392,6 +396,7 @@ def enkf_update(
     inflation: float = 1.0,
     localisation: Array | None = None,
     seed: int | None = 0,
+    background_cov: Array | None = None,
 ) -> Array:
     r"""Stochastic (perturbed-observation) ensemble Kalman filter analysis.
 
@@ -406,7 +411,15 @@ def enkf_update(
 
     Each member assimilates its own perturbed observation, drawn from
     :math:`\mathcal{N}(y, \mathbf{R})`; without that perturbation the analysis
-    ensemble is systematically under-dispersed.
+    ensemble is systematically under-dispersed. Those draws are themselves a
+    sampling error, absent from the deterministic :func:`etkf_update`, and at
+    small ensemble size the difference is measurable.
+
+    ``background_cov`` overrides the sample covariance in the *gain* while the
+    perturbations still come from the ensemble. That is the hook for hybrids:
+    pass :func:`hybrid_covariance` here to run with a blended
+    :math:`\beta\mathbf{P}^e + (1-\beta)\mathbf{B}`. Localisation, if also
+    given, is applied to whatever covariance is used.
     """
     ens = np.atleast_2d(np.asarray(ensemble, dtype=float))
     h_op = np.atleast_2d(np.asarray(h_op, dtype=float))
@@ -418,7 +431,14 @@ def enkf_update(
 
     mean = ens.mean(axis=0)
     pert = inflation * (ens - mean)
-    p_b = pert.T @ pert / (n_members - 1)
+    if background_cov is None:
+        p_b = pert.T @ pert / (n_members - 1)
+    else:
+        p_b = np.atleast_2d(np.asarray(background_cov, dtype=float))
+        if p_b.shape != (n_state, n_state):
+            raise ValueError(
+                f"background_cov must be ({n_state}, {n_state}), got {p_b.shape}"
+            )
     if localisation is not None:
         p_b = p_b * np.atleast_2d(np.asarray(localisation, dtype=float))
 
@@ -430,6 +450,191 @@ def enkf_update(
     background = mean + pert
     innovations = (y + noise) - background @ h_op.T
     return background + innovations @ gain.T
+
+
+def _symmetric_sqrt(matrix: Array) -> Array:
+    r"""Symmetric positive-semidefinite square root, via eigendecomposition.
+
+    The ETKF needs *the* symmetric square root, not any square root. A Cholesky
+    factor also satisfies :math:`\mathbf{W}\mathbf{W}^{\top}=\mathbf{C}` but is
+    triangular, so it does not preserve the ensemble mean: the analysis
+    perturbations would sum to something non-zero and the mean would be silently
+    shifted by the transform. The symmetric root is the unique one whose rows
+    sum correctly, which is why every operational ETKF uses it.
+    """
+    values, vectors = np.linalg.eigh(np.atleast_2d(matrix))
+    return (vectors * np.sqrt(np.clip(values, 0.0, None))) @ vectors.T
+
+
+def ring_localisation(n_state: int, cutoff: float) -> Array:
+    r"""Gaspari-Cohn weights for ``n_state`` sites on a periodic ring.
+
+    The Lorenz 96 geometry: site distance is :math:`\min(|i-j|, N-|i-j|)`, so
+    site 0 and site :math:`N-1` are neighbours. Forgetting the wrap-around gives
+    a localisation matrix that is not circulant, which quietly makes two
+    arbitrary sites of a homogeneous system special.
+    """
+    index = np.arange(int(n_state))
+    separation = np.abs(index[:, None] - index[None, :])
+    separation = np.minimum(separation, int(n_state) - separation)
+    return gaspari_cohn(separation, cutoff)
+
+
+def etkf_update(
+    ensemble: Array,
+    y: Array,
+    h_op: Array,
+    r_cov: Array,
+    inflation: float = 1.0,
+) -> Array:
+    r"""Deterministic ensemble transform Kalman filter analysis.
+
+    The square-root alternative to :func:`enkf_update`. Where the stochastic
+    filter gives each member its own perturbed observation, the ETKF computes a
+    single :math:`k\times k` transform and applies it to the ensemble:
+
+    .. math::
+        \tilde{\mathbf{P}}^a = \big[(k-1)\mathbf{I}
+            + \mathbf{Y}^{b\top}\mathbf{R}^{-1}\mathbf{Y}^{b}\big]^{-1},
+        \quad
+        \bar w^a = \tilde{\mathbf{P}}^a \mathbf{Y}^{b\top}\mathbf{R}^{-1}
+                   (y - \mathbf{H}\bar x^b),
+        \quad
+        \mathbf{W}^a = \big[(k-1)\tilde{\mathbf{P}}^a\big]^{1/2},
+
+    with the analysis ensemble
+    :math:`\bar x^b + \mathbf{X}^b(\bar w^a\mathbf{1}^{\top} + \mathbf{W}^a)`.
+    Following Hunt, Kostelich & Szunyogh (2007) *[citation needed: page]*.
+
+    Two things this buys. **No sampling noise from the observation
+    perturbations** -- the stochastic filter's analysis covariance is correct only
+    in expectation, and at small :math:`k` the shortfall matters. And **every
+    inverse is** :math:`k\times k`, never :math:`n\times n`, which is what makes
+    the method affordable when :math:`n\sim10^8` and :math:`k\sim100`.
+
+    What it does not buy is rank: the analysis increment still lies in the span
+    of the ensemble perturbations, a :math:`(k-1)`-dimensional subspace. Only
+    localisation escapes that, which is why :func:`letkf_update` exists.
+
+    ``ensemble`` has shape ``(n_members, n_state)``; so does the return value.
+    ``inflation`` multiplies the background perturbations, as in
+    :func:`enkf_update`.
+    """
+    ens = np.atleast_2d(np.asarray(ensemble, dtype=float))
+    h_op = np.atleast_2d(np.asarray(h_op, dtype=float))
+    r_cov = np.atleast_2d(np.asarray(r_cov, dtype=float))
+    y = np.asarray(y, dtype=float).ravel()
+    n_members = ens.shape[0]
+    if n_members < 2:
+        raise ValueError("ETKF needs at least 2 members")
+
+    mean = ens.mean(axis=0)
+    # Columns are member perturbations, matching the literature's convention.
+    x_b = inflation * (ens - mean).T                       # (n, k)
+    y_b = h_op @ x_b                                       # (p, k)
+    r_inv = np.linalg.inv(r_cov)
+
+    c_mat = y_b.T @ r_inv                                  # (k, p)
+    p_tilde = np.linalg.inv(
+        (n_members - 1) * np.eye(n_members) + c_mat @ y_b
+    )
+    w_bar = p_tilde @ (c_mat @ (y - h_op @ mean))
+    w_a = _symmetric_sqrt((n_members - 1) * p_tilde)
+    return (mean[:, None] + x_b @ (w_bar[:, None] + w_a)).T
+
+
+def letkf_update(
+    ensemble: Array,
+    y: Array,
+    h_op: Array,
+    obs_variance: float,
+    inflation: float = 1.0,
+    weights: Array | None = None,
+) -> Array:
+    r"""Local ensemble transform Kalman filter: one ETKF per state variable.
+
+    The operational form of the ETKF, and a genuinely different animal from
+    covariance localisation. Rather than multiplying a localisation function into
+    :math:`\mathbf{P}^b`, the analysis at state variable :math:`j` is computed
+    from *only the observations near it*, by scaling the inverse observation-error
+    variance by a distance weight:
+    :math:`\mathbf{R}^{-1}\to\operatorname{diag}(w_j)/\sigma_o^2`. An observation
+    with weight zero is simply absent from that variable's problem.
+
+    This is where localisation earns its keep, and the reason is about **rank**,
+    not about spurious correlations. A global ensemble filter's increment lies in
+    the span of :math:`k-1` ensemble perturbations no matter how the covariance is
+    tapered in observation space; the LETKF solves :math:`n` separate problems,
+    each with its own :math:`k`-dimensional transform, and the resulting global
+    increment need not lie in that span at all. Chapter 19 measures the rank
+    directly.
+
+    ``obs_variance`` is a scalar :math:`\sigma_o^2`: the observation errors must be
+    uncorrelated for the weighting above to be meaningful, and a full
+    :math:`\mathbf{R}` cannot be localised this way. ``weights`` has shape
+    ``(n_state, n_obs)``; ``None`` means all weights 1, which reduces this to
+    :func:`etkf_update` with diagonal :math:`\mathbf{R}`.
+    """
+    ens = np.atleast_2d(np.asarray(ensemble, dtype=float))
+    h_op = np.atleast_2d(np.asarray(h_op, dtype=float))
+    y = np.asarray(y, dtype=float).ravel()
+    n_members, n_state = ens.shape
+    if n_members < 2:
+        raise ValueError("LETKF needs at least 2 members")
+    n_obs = h_op.shape[0]
+    if weights is None:
+        weights = np.ones((n_state, n_obs))
+    weights = np.atleast_2d(np.asarray(weights, dtype=float))
+
+    mean = ens.mean(axis=0)
+    x_b = inflation * (ens - mean).T                       # (n, k)
+    y_b = h_op @ x_b                                       # (p, k)
+    innovation = y - h_op @ mean
+    identity = (n_members - 1) * np.eye(n_members)
+
+    analysis = np.empty((n_state, n_members))
+    for j in range(n_state):
+        near = weights[j] > 0.0
+        if not np.any(near):
+            # No observation reaches this variable: the analysis is the
+            # background, perturbations and all. Returning the mean here instead
+            # would silently collapse the ensemble spread wherever the
+            # observing network has a hole.
+            analysis[j] = mean[j] + x_b[j]
+            continue
+        y_local = y_b[near]                                # (p_j, k)
+        scaled = y_local.T * (weights[j][near] / obs_variance)   # (k, p_j)
+        p_tilde = np.linalg.inv(identity + scaled @ y_local)
+        w_bar = p_tilde @ (scaled @ innovation[near])
+        w_a = _symmetric_sqrt((n_members - 1) * p_tilde)
+        analysis[j] = mean[j] + x_b[j] @ (w_bar[:, None] + w_a)
+    return analysis.T
+
+
+def hybrid_covariance(
+    ensemble: Array, static_cov: Array, weight: float, inflation: float = 1.0
+) -> Array:
+    r"""Blend an ensemble covariance with a static one.
+
+    .. math::
+        \mathbf{P} = \beta\,\mathbf{P}^e + (1-\beta)\,\mathbf{B},
+        \qquad \beta\in[0,1]
+
+    The standard hybrid, and the configuration most operational centres actually
+    run. :math:`\beta=1` is a pure ensemble filter, :math:`\beta=0` is 3D-Var.
+    The blend is full rank for any :math:`\beta<1` because :math:`\mathbf{B}` is,
+    which is a second and quite separate route out of the rank problem --
+    localisation raises the rank by splitting the problem up, a hybrid raises it
+    by adding a full-rank matrix.
+    """
+    ens = np.atleast_2d(np.asarray(ensemble, dtype=float))
+    static_cov = np.atleast_2d(np.asarray(static_cov, dtype=float))
+    beta = float(weight)
+    if not 0.0 <= beta <= 1.0:
+        raise ValueError("hybrid weight must lie in [0, 1]")
+    pert = inflation * (ens - ens.mean(axis=0))
+    p_e = pert.T @ pert / (ens.shape[0] - 1)
+    return beta * p_e + (1.0 - beta) * static_cov
 
 
 def analysis_rmse(analysis: Array, truth: Array) -> float:

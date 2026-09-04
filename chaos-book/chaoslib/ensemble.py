@@ -23,6 +23,7 @@ Array = NDArray[np.floating]
 __all__ = [
     "gaussian_perturbations",
     "ensemble_spread",
+    "outside_span_fraction",
     "ensemble_mean_error",
     "rank_histogram",
     "crps",
@@ -43,6 +44,44 @@ def gaussian_perturbations(
     rng = np.random.default_rng(seed)
     x0 = np.asarray(x0, dtype=float).ravel()
     return x0 + delta0 * rng.normal(size=(n_members, x0.size))
+
+
+def outside_span_fraction(increment: Array, ensemble: Array,
+                          tol: float = 1e-10) -> float:
+    r"""What fraction of ``increment`` lies outside the ensemble's own subspace.
+
+    An ensemble of :math:`k` members spans a :math:`(k-1)`-dimensional affine
+    subspace, and a *global* ensemble filter can only move the state inside it:
+    its analysis is :math:`\bar x + \mathbf{X}w`, so the increment is
+    :math:`\mathbf{X}` times something. This returns
+    :math:`\|(\mathbf{I}-\mathbf{\Pi})\,\delta x\| / \|\delta x\|` with
+    :math:`\mathbf{\Pi}` the orthogonal projector onto that span -- zero to
+    machine precision for a global filter, and strictly positive for a *local*
+    one, which is the quantitative form of the rank argument in chapter 19.
+
+    ``increment`` and ``ensemble`` are both ``(n_members, n_state)``.
+
+    **The projector is built from an explicit SVD, not from** ``np.linalg.pinv``.
+    The perturbation matrix is deliberately rank deficient, and `pinv`'s default
+    cutoff is relative to the largest singular value: when the numerically-zero
+    one lands just above that cutoff it is *retained* and inverted to something
+    of order :math:`10^{13}`, and the resulting projector acquires a spurious
+    direction with enormous weight. That happened at three of seven ensemble
+    sizes here, returning :math:`10^{-2}` where the answer is exactly zero --
+    erratic across sizes, and entirely a property of the diagnostic rather than
+    of the filter.
+    """
+    increment = np.atleast_2d(np.asarray(increment, dtype=float)).T
+    ensemble = np.atleast_2d(np.asarray(ensemble, dtype=float))
+    perturbations = (ensemble - ensemble.mean(axis=0)).T
+    left, singular, _ = np.linalg.svd(perturbations, full_matrices=False)
+    keep = singular > singular[0] * float(tol)
+    basis = left[:, keep]
+    residual = increment - basis @ (basis.T @ increment)
+    norm = np.linalg.norm(increment)
+    if norm == 0.0:
+        return 0.0
+    return float(np.linalg.norm(residual) / norm)
 
 
 def ensemble_spread(ensemble: Array) -> Array:
