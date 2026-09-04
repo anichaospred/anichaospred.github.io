@@ -216,9 +216,24 @@ start and no link is dead.
     vectors, EDA); reliability; CRPS, Brier score, rank histograms; the value of a
     probabilistic forecast to a decision. *Notebook:* build an ensemble three ways and
     score all three. *Knob:* ensemble size, perturbation strategy.
-18. **Variational data assimilation** — 3D-Var; 4D-Var; the incremental form; why the
-    adjoint is what makes the gradient affordable. *Notebook:* 4D-Var on L63 with the
-    cost-function descent shown live. *Knob:* window length, $\mathbf{B}$.
+18. ★ **Variational data assimilation** — One cost function, and how much follows from
+    keeping $\mathcal{M}$ inside it. Observe $x$ alone and 3D-Var returns $y$ and $z$
+    *bitwise unchanged*, while 4D-Var cuts the error in the unobserved $y$ by 37 % — the
+    model as constraint, which is why radiances and bending angles are assimilable. The
+    Hessian **is** the analysis-error covariance: it never sees the observed values, it
+    is flow-dependent though $\mathbf{B}$ is not, and on a linear system one outer step
+    reproduces the Kalman mean to $1.6\times10^{-15}$ and $\mathbf{M}\mathbf{A}
+    \mathbf{M}^{\top}$ its covariance to $4.4\times10^{-16}$. The result worth the
+    chapter: holding observation *count* fixed and moving only their *timing*, spreading
+    them over a window gives an analysis **43 % worse** at the analysis time and
+    2--3$\times$ better at every forecast lead — a benefit invisible where analyses are
+    verified. Window length has a broad optimum at 0.8--1.2 TU (0.7--1.1 e-folding
+    times), because local minima of $J$ on one slice go 1 → 3 → 17 as the window grows
+    0.5 → 2.0. Two negative results kept: the gradient test is **blind at the
+    background**, where $\mathbf{B}^{-1}(x_0-x^b)$ vanishes and a gradient missing that
+    term entirely gives a bitwise-identical curve; and incremental 4D-Var, being
+    Gauss--Newton, converges from a background of error 1.33 and **stalls completely** at
+    2.66. *Knob:* window length, $\mathbf{B}$. †
 19. **Ensemble data assimilation** — The EnKF and ETKF; sampling error, localisation
     and inflation; hybrid methods. *Notebook:* EnKF on L96 with localisation radius
     and inflation as sliders, and the filter-divergence cliff. *Knob:* ensemble size,
@@ -343,20 +358,22 @@ Pyodide build every reader's browser receives.
 
 | | Count |
 |---|---|
-| Chapters live | **15** (4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 20, 21) |
-| Chapters stubbed | 16 |
+| Chapters live | **16** (4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 18, 20, 21) |
+| Chapters stubbed | 15 |
 | `chaoslib` modules | 10 |
-| `chaoslib` tests | 190, all passing |
+| `chaoslib` tests | 197, all passing |
 
 **Next chapters, in priority order** — each already has most of its material in hand:
 
-1. **Ch. 18/19** (variational and ensemble DA) — chapter 20 currently carries their
-   theory sections; see the note below. Parts III and IV are now complete, so Part V is
-   where the remaining work is.
-2. **Ch. 17** (probabilistic forecast design) — `chaoslib.ensemble` is tested and
-   unused by any live chapter; chapters 11 and 21 both end by pointing at it.
-3. **Ch. 22** (verification) — the natural close of Part V, and chapters 13 and 21 both
-   defer the observation-error problem to it.
+1. **Ch. 19** (ensemble DA) — the natural partner to chapter 18, which ends by pointing
+   at it: replace the fixed $\mathbf{B}$ with an ensemble estimate and buy
+   flow-dependence at the analysis time rather than only inside the window.
+   `chaoslib.assimilate.enkf_update`, `gaspari_cohn` and the inflation machinery are
+   tested and already used by chapter 20.
+2. **Ch. 17** (probabilistic forecast design) — `chaoslib.ensemble` is tested and unused
+   by any live chapter; chapters 11 and 21 both end by pointing at it.
+3. **Ch. 22** (verification) — the close of Part V, and chapters 13, 18 and 21 all defer
+   the observation-error problem to it.
 
 ### A second decision on record: splitting chapter 20
 
@@ -366,3 +383,9 @@ coherent, tested teaching artefact, and breaking it up before its neighbours exi
 would leave gaps. As chapters 18 and 19 are written they should take the corresponding
 theory sections, and chapter 20 should shrink to cycling, analysis error and the
 logarithmic return — which is its real subject.
+
+**Status:** chapter 18 is now live and carries the variational theory in far more depth
+than chapter 20's section 3 does, so that section is now the redundant one. It has been
+left in place until chapter 19 exists, at which point chapter 20's sections 2--4 should
+be cut together and replaced by cross-references. Cutting them one at a time would leave
+chapter 20 with an EnKF section that assumes a 4D-Var section that is no longer there.

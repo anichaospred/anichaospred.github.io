@@ -42,6 +42,7 @@ __all__ = [
     "adjoint_identity_residual",
     "tangent_linear_error",
     "singular_vectors",
+    "gradient_test",
     "leading_singular_value",
 ]
 
@@ -229,6 +230,78 @@ def singular_vectors(
     initial = inv_root @ vt[:k].T
     final = inv_root @ u[:, :k]
     return s[:k], initial, final
+
+
+def gradient_test(
+    cost_and_gradient: Callable[[Array], tuple[float, Array]],
+    x0: Array,
+    direction: Array | None = None,
+    alphas: Array | None = None,
+) -> tuple[Array, Array]:
+    r"""The standard adjoint gradient test.
+
+    .. math::
+        \Phi(\alpha) = \frac{J(x_0+\alpha h) - J(x_0)}
+                            {\alpha\, h^{\top}\nabla J(x_0)}
+
+    If :math:`\nabla J` really is the gradient of :math:`J`, then
+    :math:`\Phi(\alpha)\to 1` as :math:`\alpha\to 0`, since the numerator is
+    :math:`\alpha h^{\top}\nabla J + O(\alpha^2)`. This is the test operational
+    centres run on an adjoint before they trust it, and it is stronger than
+    comparing a few components against finite differences because it exercises
+    the whole gradient at once, in one direction, at many magnitudes.
+
+    Plotted as :math:`|\Phi-1|` against :math:`\alpha` on log axes it makes a
+    **V**. The right branch falls with slope 1: it is the neglected
+    :math:`O(\alpha^2)` curvature, divided by :math:`\alpha`. The left branch
+    rises like :math:`1/\alpha`: the numerator is a difference of two nearly
+    equal numbers, so its relative error is roughly
+    :math:`\varepsilon|J|/(\alpha|h^{\top}\nabla J|)`. The floor between them is
+    the best the test can do, and *where* the floor sits is set by how accurately
+    :math:`J` itself can be evaluated -- not by the gradient.
+
+    The diagnostic value is in the shape, not the floor. A gradient that is
+    merely *nearly* right -- a missing term, a wrong transpose, a factor
+    somewhere -- **plateaus**: :math:`|\Phi-1|` descends the curvature branch,
+    levels off at the gradient's own relative error, and stays there over many
+    decades of :math:`\alpha`, because that discrepancy is a property of the
+    gradient rather than of the arithmetic. Only at the very smallest
+    :math:`\alpha` does cancellation error reassert itself and lift the curve
+    again, so a wrong gradient does eventually turn upward too -- the honest
+    discriminant is the **depth** of the trough, not its existence. Measured on
+    the chapter-18 configuration, a correct gradient descends over five decades
+    to :math:`3\times10^{-8}` while one that is wrong by 1 % sits flat at
+    :math:`10^{-2}` across nearly the whole range.
+
+    ``direction`` defaults to a fixed pseudo-random unit vector, so the test is
+    reproducible. ``alphas`` defaults to 21 points spanning
+    :math:`10^{-14}` to :math:`10^{-1}`.
+
+    Returns ``(alphas, phi)``.
+    """
+    x0 = np.asarray(x0, dtype=float).ravel()
+    if direction is None:
+        rng = np.random.default_rng(0)
+        direction = rng.normal(size=x0.size)
+        direction = direction / np.linalg.norm(direction)
+    direction = np.asarray(direction, dtype=float).ravel()
+    if alphas is None:
+        alphas = np.logspace(-14.0, -1.0, 21)
+    alphas = np.asarray(alphas, dtype=float).ravel()
+
+    base_cost, base_grad = cost_and_gradient(x0)
+    slope = float(direction @ base_grad)
+    if slope == 0.0:
+        raise ValueError(
+            "the directional derivative vanishes; the gradient test is "
+            "undefined along this direction -- pick another"
+        )
+
+    phi = np.empty(alphas.size)
+    for i, alpha in enumerate(alphas):
+        perturbed, _ = cost_and_gradient(x0 + alpha * direction)
+        phi[i] = (perturbed - base_cost) / (alpha * slope)
+    return alphas, phi
 
 
 def leading_singular_value(propagator: Array) -> float:
