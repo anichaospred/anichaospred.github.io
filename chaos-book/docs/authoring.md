@@ -5,6 +5,31 @@ conventions are load-bearing: they are what keep 31 notebooks feeling like one b
 See [`architecture.md`](architecture.md) for how the build works and
 [`chaoslib.md`](chaoslib.md) for what the library already provides.
 
+## The guard that catches a silently broken notebook
+
+A marimo cell that raises `NameError` in the reader's browser exports with **exit code 0**
+and **zero `marimo-error` matches**, and every other figure renders perfectly. The only
+symptom is one line on stderr, which is easy to scroll past.
+
+`tests/test_notebooks.py` checks statically for the underlying fault — a cell using a
+name that nothing provides — across every chapter, in under a second. It has three
+historical failures as its motivation, all of which shipped past a clean-looking export:
+
+| Failure | Chapter | What it looked like |
+|---|---|---|
+| bare `nan` in a data cell | 12, 22 | four figures fine, one missing |
+| `L63_FULL_1eM12` emitted, `L63_FULL_1EM12` used | 10 | a fifth figure that did not exist |
+| typo inside an f-string | — | caught by the check, never shipped |
+
+It also catches `nan` and `inf` nested inside tuples and dicts. On the generator side,
+emit every float through the `_scalar` helper rather than an f-string format, so a
+non-finite value is spelled `float("nan")` at the source.
+
+When adding a check like this, **verify it can fail.** The first run of this one used a
+probe file whose name did not match the notebook glob, reported a clean sweep across
+zero files, and would have been believed. `test_notebooks_were_found` exists for that
+reason.
+
 ## 0. Before writing anything
 
 - Read the chapter's entry in [`PLAN.md`](../PLAN.md). It specifies the **forecasting

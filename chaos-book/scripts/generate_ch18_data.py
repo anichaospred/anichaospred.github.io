@@ -74,6 +74,23 @@ def _emit(name: str, values, fmt: str = ".6e", per_line: int = 8) -> None:
     print(")")
 
 
+def _scalar(name: str, value, fmt: str = ".6f") -> None:
+    """Emit one float, spelling a non-finite one as `float("nan")`.
+
+    A bare `nan` in the generated data is valid Python only where numpy is in
+    scope under that name, which in a marimo data cell it is not -- so it
+    becomes a NameError in the reader's browser. It is invisible to
+    `grep marimo-error` and does not change the exporter's exit code; only
+    stderr reports it. `tests/test_notebooks.py` now catches it in the notebook,
+    and this catches it at the source.
+    """
+    value = float(value)
+    if not np.isfinite(value):
+        print(f'{name} = float("nan")')
+    else:
+        print(f"{name} = {format(value, fmt)}")
+
+
 def _attractor() -> np.ndarray:
     return integrate.rk4(
         systems.lorenz63, np.array([1.0, 1.0, 20.0]),
@@ -252,7 +269,7 @@ def gradient_curves(attractor, b_cov) -> None:
     print(f"GRAD_BLIND_AT_BACKGROUND = {blind}")
     _emit("GRAD_BLIND_EXACT", np.abs(phi_exact - 1.0), ".6e")
     _emit("GRAD_BLIND_NOBG", np.abs(phi_nobg - 1.0), ".6e")
-    print(f"SQRT_EPS = {np.sqrt(np.finfo(float).eps):.6e}")
+    _scalar("SQRT_EPS", np.sqrt(np.finfo(float).eps), ".6e")
 
 
 # ==========================================================================
@@ -426,8 +443,8 @@ def hessian_structure(attractor, b_cov) -> None:
         )) @ propagator.T - kalman_cov).max())
     print(f"#   linear model, one outer step: |mean - Kalman| = {mean_gap:.2e}, "
           f"|M A M^T - Kalman cov| = {cov_gap:.2e}")
-    print(f"KALMAN_MEAN_GAP = {mean_gap:.6e}")
-    print(f"KALMAN_COV_GAP = {cov_gap:.6e}")
+    _scalar("KALMAN_MEAN_GAP", mean_gap, ".6e")
+    _scalar("KALMAN_COV_GAP", cov_gap, ".6e")
 
 
 # ==========================================================================
@@ -484,7 +501,7 @@ def window_sweep(attractor, b_cov) -> None:
           f"{errors[best]:.4f}, against {errors[0]:.4f} at the shortest window "
           f"and {errors[-1]:.4f} at {WINDOWS[-1]:.1f}")
     print(f"WINDOWS = {WINDOWS}")
-    print(f"WINDOW_BACKGROUND = {background:.6f}")
+    _scalar("WINDOW_BACKGROUND", background, ".6f")
     print(f"WINDOW_BEST = {WINDOWS[best]}")
     print(f"WINDOW_CASES = {N_CASES}")
     print(f"LAMBDA1 = {LAMBDA1}")

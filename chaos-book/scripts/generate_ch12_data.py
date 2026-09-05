@@ -65,6 +65,23 @@ def _emit(name: str, values, fmt: str = ".6g", per_line: int = 8) -> None:
     print(")")
 
 
+def _scalar(name: str, value, fmt: str = ".6f") -> None:
+    """Emit one float, spelling a non-finite one as `float("nan")`.
+
+    A bare `nan` in the generated data is valid Python only where numpy is in
+    scope under that name, which in a marimo data cell it is not -- so it
+    becomes a NameError in the reader's browser. It is invisible to
+    `grep marimo-error` and does not change the exporter's exit code; only
+    stderr reports it. `tests/test_notebooks.py` now catches it in the notebook,
+    and this catches it at the source.
+    """
+    value = float(value)
+    if not np.isfinite(value):
+        print(f'{name} = float("nan")')
+    else:
+        print(f"{name} = {format(value, fmt)}")
+
+
 def cascade_sweeps() -> None:
     print("# --- cascade: contamination time vs resolved octaves ---")
     table = np.empty((len(ALPHAS), len(BAND_COUNTS)))
@@ -155,8 +172,8 @@ def two_scale_experiments() -> None:
     print(f"#   {N_MEMBERS} base states in {time.perf_counter() - started:.1f}s")
     print(f"#   climatological RMS difference: slow {saturation_slow:.4f}, "
           f"fast {saturation_fast:.4f}")
-    print(f"TWO_SCALE_SAT_SLOW = {saturation_slow:.5f}")
-    print(f"TWO_SCALE_SAT_FAST = {saturation_fast:.5f}")
+    _scalar("TWO_SCALE_SAT_SLOW", saturation_slow, ".5f")
+    _scalar("TWO_SCALE_SAT_FAST", saturation_fast, ".5f")
     print(f"TWO_SCALE_AMPLITUDES = {SEED_AMPLITUDES}")
 
     n_samples = int(T_FINAL / (DT * STORE_EVERY)) + 1
@@ -223,7 +240,7 @@ def two_scale_experiments() -> None:
     rate = float(np.polyfit(times[window], np.log(separation[window]), 1)[0])
     print(f"#   coupled lambda_1 = {rate:.3f} per time unit "
           f"(doubling {np.log(2) / rate:.4f} TU), fitted over {int(window.sum())} points")
-    print(f"TWO_SCALE_LAMBDA1 = {rate:.4f}")
+    _scalar("TWO_SCALE_LAMBDA1", rate, ".4f")
     _emit("TWO_SCALE_SEP_TIMES", times, ".4f")
     _emit("TWO_SCALE_SEP", separation, ".5e")
     print(f"# total {time.perf_counter() - started:.0f}s")

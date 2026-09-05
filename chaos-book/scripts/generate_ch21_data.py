@@ -65,6 +65,23 @@ def _emit(name: str, values, fmt: str = ".6e", per_line: int = 6) -> None:
     print(")")
 
 
+def _scalar(name: str, value, fmt: str = ".6f") -> None:
+    """Emit one float, spelling a non-finite one as `float("nan")`.
+
+    A bare `nan` in the generated data is valid Python only where numpy is in
+    scope under that name, which in a marimo data cell it is not -- so it
+    becomes a NameError in the reader's browser. It is invisible to
+    `grep marimo-error` and does not change the exporter's exit code; only
+    stderr reports it. `tests/test_notebooks.py` now catches it in the notebook,
+    and this catches it at the source.
+    """
+    value = float(value)
+    if not np.isfinite(value):
+        print(f'{name} = float("nan")')
+    else:
+        print(f"{name} = {format(value, fmt)}")
+
+
 def _truth(states: np.ndarray, grid: np.ndarray) -> np.ndarray:
     return integrate.rk4(systems.lorenz96, states, grid, forcing=FORCING)
 
@@ -109,7 +126,7 @@ def main() -> None:
 
     print(f"# truth: Lorenz 96, N={N_SITES}, F={FORCING}; {N_STARTS} start states")
     print(f"# saturation (per component, mean) = {saturation:.5f}")
-    print(f"SATURATION = {saturation:.6f}")
+    _scalar("SATURATION", saturation, ".6f")
     print(f"LAMBDA1 = {LAMBDA1}")
     print(f"IC_AMPLITUDES = {IC_AMPLITUDES}")
     print(f"BIASES = {BIASES}")

@@ -40,6 +40,23 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from chaoslib import maps, systems  # noqa: E402
 
+
+def _scalar(name: str, value, fmt: str = ".6f") -> None:
+    """Emit one float, spelling a non-finite one as `float("nan")`.
+
+    A bare `nan` in the generated data is valid Python only where numpy is in
+    scope under that name, which in a marimo data cell it is not -- so it
+    becomes a NameError in the reader's browser. It is invisible to
+    `grep marimo-error` and does not change the exporter's exit code; only
+    stderr reports it. `tests/test_notebooks.py` now catches it in the notebook,
+    and this catches it at the source.
+    """
+    value = float(value)
+    if not np.isfinite(value):
+        print(f'{name} = float("nan")')
+    else:
+        print(f"{name} = {format(value, fmt)}")
+
 # Distances below r_c = 1 + 2 sqrt(2), spread over a 33-fold range so the
 # power-law fit has leverage. The closest is limited by how often a 400,000-step
 # run still samples a laminar phase of the relevant length.
@@ -70,8 +87,9 @@ def main() -> None:
     print("LAMINAR_EPS = (" + ", ".join(f"{v:g}" for v in EPSILONS) + ")")
     print("LAMINAR_MEAN = (" + ", ".join(f"{v:.4f}" for v in means) + ")")
     print("LAMINAR_COUNT = (" + ", ".join(str(v) for v in counts) + ")")
-    print(f"LAMINAR_SLOPE = {slope:.4f}   # theory -1/2")
-    print(f"LAMINAR_INTERCEPT = {intercept:.4f}")
+    print("# LAMINAR_SLOPE: theory says -1/2")
+    _scalar("LAMINAR_SLOPE", slope, ".4f")
+    _scalar("LAMINAR_INTERCEPT", intercept, ".4f")
     print(f"LAMINAR_N_ITER = {N_ITER}")
 
 
