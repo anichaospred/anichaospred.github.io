@@ -172,6 +172,41 @@ against it.
 $\min(|i-j|, N-|i-j|)$. Building it from $|i-j|$ instead gives a non-circulant matrix,
 which quietly makes two arbitrary sites of a homogeneous system special.
 
+## `verification` — deterministic scores, and an imperfect truth
+
+`anomaly_correlation`, `mse_decomposition`, `mse_skill_score`, `skill_horizon`,
+`acc_threshold_for_climatological_skill`, `optimal_damping`,
+`correct_mse_for_observation_error`, `correct_acc_for_observation_error`.
+
+Deterministic verification, and the corrections that relate a score computed against
+*observations* to the score you actually wanted. The probabilistic scores stay in
+`ensemble`.
+
+Four exact statements anchor the module. Murphy's split
+$\mathrm{MSE} = \text{bias}^2 + (\sigma_f-\sigma_t)^2 + 2\sigma_f\sigma_t(1-r)$ is an
+identity. An **undamped** forecast — unbiased, anomaly variance matching the truth's —
+has skill score exactly $2r-1$ against climatology, so it ties at $r = 1/2$: **that is
+where the conventional 0.6 threshold comes from**, and it is a statement about a
+post-processing choice rather than about predictability. `optimal_damping` gives
+$\mathrm{MSE} = \sigma_t^2(1-r^2)$, which beats climatology at *any* non-zero
+correlation — so `acc_threshold_for_climatological_skill(damped=True)` is 0. And
+independent observation error inflates the mean-square error by exactly $\sigma_o^2$
+while attenuating the anomaly correlation by exactly
+$(1+\sigma_o^2/\sigma_t^2)^{-1/2}$.
+
+`correct_mse_for_observation_error` **returns negative values rather than clipping
+them**, and that is the useful part. The correction assumes the observation error is
+independent of the forecast error, which fails when the verifying observations were
+*assimilated* into the analysis the forecast started from: the errors then share a
+component, the score is optimistic rather than pessimistic, and subtracting $\sigma_o^2$
+yields an impossible negative mean-square error. A clipped zero would have looked like a
+very good forecast.
+
+`skill_horizon` interpolates the crossing rather than reporting the last grid point that
+still qualified. With skill sampled every six hours, rounding to the grid quantises every
+horizon in chapter 22 to the sampling interval and erases the differences between scores
+that the chapter exists to show.
+
 ## `ensemble` — construction and verification
 
 **Construction:** `gaussian_perturbations`, `bred_vectors`,

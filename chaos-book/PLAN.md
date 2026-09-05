@@ -283,9 +283,28 @@ start and no link is dead.
     about one decade wide, and Parts III–IV's perfect-model numbers are **upper
     bounds**. Neither DA nor ch. 13's estimator can fix or even see it.
     *Knob:* model bias, initial accuracy, error source.
-22. **Forecast verification and the practical horizon** — Anomaly correlation; the
-    ECMWF skill record *[citation needed]*; how the practical horizon has advanced
-    while the intrinsic one has not. *Knob:* threshold defining "useful".
+22. ★ **Forecast verification and the practical horizon** — Where "useful to about a
+    week" is shown to be a statement about four choices, none of them about the
+    atmosphere. **The 0.6 threshold is arithmetic**: an undamped forecast has skill
+    score exactly $2r-1$, so it ties with climatology at $r=1/2$; damped optimally it
+    scores $r^2$ and wins at any $r>0$. The same 367 forecasts give horizons **2.5x
+    apart** across defensible definitions (ACC 0.6 → 1.94 TU, Brier skill → 3.79), and
+    ACC 0.5 and MSE-skill-zero agree exactly at 2.20 because the identity says they
+    must. Post-processing moves it further than the threshold does: undamped MSE
+    reaches climatology at 2.22 TU, damped never within 5. **The deferred question from
+    five chapters** — verifying without a truth — gets its answer: independent
+    observation error inflates MSE by exactly $\sigma_o^2$ at every lead and
+    attenuates ACC by exactly $(1+\sigma_o^2/\sigma_t^2)^{-1/2}$, both correctable;
+    verifying against your own analysis flatters by 64 % at lead 0.1 but under 2 % by
+    lead 1; and verifying an analysis against its *own assimilated* observations makes
+    the correction return a **negative mean-square error**, which is the most useful
+    thing it can do. Murphy's split localises faults correctly (wrong forcing →
+    amplitude x119, offset → bias x63) even though phase dominates the total
+    everywhere. And chapter 12's promise is tested across seven decades of
+    $\delta_0$: single-scale L96 keeps paying at the predicted $\ln 10/\lambda_1 =
+    1.38$ TU per decade, two-scale pays **8x less** — supporting "different quantities"
+    exactly and softening "only one moves", since the two-scale curve is still creeping
+    up at $10^{-8}$. *Knob:* the threshold defining "useful". †
 
 ### Part VI — Predictability of the second kind: from S2S to climate
 
@@ -386,20 +405,23 @@ Pyodide build every reader's browser receives.
 
 | | Count |
 |---|---|
-| Chapters live | **18** (4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21) |
-| Chapters stubbed | 13 |
+| Chapters live | **19** (4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22) |
+| Chapters stubbed | 12 |
 | `chaoslib` modules | 10 |
-| `chaoslib` tests | 219, all passing |
+| `chaoslib` tests | 237, all passing |
 
 **Next chapters, in priority order** — each already has most of its material in hand:
 
-1. **Ch. 22** (verification) — the close of Part V, and now the only stub left in it.
-   Chapters 13, 17, 18, 19 and 21 all defer the observation-error problem to it, and
-   chapter 17 in particular scored every forecast against a known truth that no
-   operational centre ever has.
+**Part V is complete.** All eight chapters are live, which makes the remaining work a
+single block plus one piece of tidying.
+
+1. **Part VI** (chapters 23–27, predictability of the second kind) — ENSO and the S2S
+   window, the ocean and decadal prediction, climate projection, Earth system
+   prediction, tipping points. Untouched, and now the largest remaining block of the
+   book. Chapter 22 ends by pointing directly at it.
 2. **Ch. 20's diet** — unblocked since chapter 19; see the note below.
-3. **Part VI** (chapters 23–27, predictability of the second kind) — untouched, and the
-   largest remaining block of the book.
+3. **Part VII** (chapters 28–29, frontiers) and **Part VIII** (30–31, optional
+   structure).
 
 ### A second decision on record: splitting chapter 20
 
