@@ -62,6 +62,23 @@ def _emit(name: str, values, fmt: str = ".6e", per_line: int = 8) -> None:
     print(")")
 
 
+def _scalar(name: str, value, fmt: str = ".6f") -> None:
+    """Emit one float, spelling a non-finite one as `float("nan")`.
+
+    A bare `nan` in the generated data is valid Python only where numpy is in
+    scope under that name, which in a marimo data cell it is not -- so it
+    becomes a NameError in the reader's browser. It is invisible to
+    `grep marimo-error` and does not change the exporter's exit code; only
+    stderr reports it. `tests/test_notebooks.py` now catches it in the notebook,
+    and this catches it at the source.
+    """
+    value = float(value)
+    if not np.isfinite(value):
+        print(f'{name} = float("nan")')
+    else:
+        print(f"{name} = {format(value, fmt)}")
+
+
 def conservation() -> None:
     print("# --- 1. inviscid conservation, the solver's warrant ---")
     grid = turbulence.spectral_grid(96)
@@ -124,8 +141,8 @@ def snapshots() -> None:
     print(f"#   final spectrum: peak k={ks[top]:.0f}, falls "
           f"{np.log10(es[top] / es[-1]):.2f} decades over "
           f"{np.log2(ks[-1] / ks[top]):.1f} octaves above the peak")
-    print(f"FLOW_DECADES = {np.log10(es[top] / es[-1]):.4f}")
-    print(f"FLOW_OCTAVES = {np.log2(ks[-1] / ks[top]):.4f}")
+    _scalar("FLOW_DECADES", np.log10(es[top] / es[-1]), ".4f")
+    _scalar("FLOW_OCTAVES", np.log2(ks[-1] / ks[top]), ".4f")
     _emit("FLOW_SPEC_K", ks, ".1f", per_line=16)
     _emit("FLOW_SPEC_E", es, ".6e")
 
@@ -190,8 +207,8 @@ def spectra() -> None:
     print(f"#   Lorenz 96: peak m={ms[top]:.0f}, falls "
           f"{np.log10(ps[top] / ps[-1]):.2f} decades over "
           f"{np.log2(ms[-1] / ms[top]):.1f} octaves above the peak")
-    print(f"L96_DECADES = {np.log10(ps[top] / ps[-1]):.4f}")
-    print(f"L96_OCTAVES = {np.log2(ms[-1] / ms[top]):.4f}")
+    _scalar("L96_DECADES", np.log10(ps[top] / ps[-1]), ".4f")
+    _scalar("L96_OCTAVES", np.log2(ms[-1] / ms[top]), ".4f")
     print(f"L96_PEAK = {int(ms[top])}")
     _emit("L96_MODES", modes, ".1f", per_line=16)
     _emit("L96_POWER", power, ".6e")

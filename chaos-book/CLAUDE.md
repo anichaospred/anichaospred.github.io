@@ -31,6 +31,10 @@ the short version of what must not be got wrong.
 - Per-chapter heavy data goes in `site/static/data/`, never `notebooks/public/` — there is
   only one shared `public/` and everything in it is paid for once but shipped to every
   chapter.
+- Generators emit floats through a `_scalar` helper, never a bare
+  `print(f"NAME = {value:.4f}")`. A non-finite value formats as `nan`, which is valid
+  Python only where numpy is in scope under that name — in a marimo data cell it is not,
+  so it becomes a `NameError` in the reader's browser.
 - The PEP 723 header pins marimo exactly and leaves numpy/scipy/plotly floating. Do not
   "tidy" that into exact pins; see the *Reproducibility* section of the README.
 - Marimo cell signatures are dependency declarations. Removing a name from one cell's
@@ -40,6 +44,24 @@ the short version of what must not be got wrong.
 - `marimo export` drops a stray `CLAUDE.md` into the output directory; the Makefile removes
   it. Do not be alarmed by it, and do not commit it.
 
+## CI runs Python 3.11; your interpreter probably does not
+
+`deploy.yml` pins `python-version: "3.11"`, and the PEP 723 headers say
+`requires-python = ">=3.11"`. A newer local interpreter will happily accept syntax that
+CI rejects — PEP 701 relaxed f-strings in 3.12, so a backslash inside an f-string
+expression parses locally and is a `SyntaxError` on the runner. That has cost one red
+build already.
+
+Before pushing, compile everything against the floor:
+
+```bash
+uv run --python 3.11 --no-project python -c "
+import pathlib
+for p in pathlib.Path('.').rglob('*.py'):
+    if '__marimo__' not in str(p): compile(p.read_text(), str(p), 'exec')
+print('3.11 clean')"
+```
+
 ## Verifying a notebook change
 
 `marimo export html --sandbox notebooks/chNN.py -o <scratch>.html` *executes every cell*.
@@ -48,8 +70,16 @@ reader's browser.
 
 Check **the exit code and stderr**, not just `grep -c marimo-error` — a notebook whose
 cells all raised still grepped to 0 while the command printed "some cells failed to
-execute". For figures, count the rendered images and extract one to look at: "it
-rendered" is not "it is right".
+execute". Worse, the **exit code is 0 in that case too**: on three occasions the only
+sign of a broken notebook was a single line on stderr. For figures, count the rendered
+images and extract one to look at: "it rendered" is not "it is right".
+
+`tests/test_notebooks.py` now catches the commonest form of this statically, in under a
+second: **a cell using a name that nothing provides.** A bare `nan` in a data cell, a
+case mismatch between what a generator emitted and what a figure asks for, and a typo
+inside an f-string all look like that, and all three have shipped past a clean export
+here. It runs under `make test`, so it gates every commit. It does *not* replace the
+stderr check — an exception that is not a `NameError` still only shows up there.
 
 ## Git workflow
 

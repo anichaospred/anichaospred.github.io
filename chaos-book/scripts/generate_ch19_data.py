@@ -85,6 +85,23 @@ def _emit(name: str, values, fmt: str = ".6e", per_line: int = 8) -> None:
     print(")")
 
 
+def _scalar(name: str, value, fmt: str = ".6f") -> None:
+    """Emit one float, spelling a non-finite one as `float("nan")`.
+
+    A bare `nan` in the generated data is valid Python only where numpy is in
+    scope under that name, which in a marimo data cell it is not -- so it
+    becomes a NameError in the reader's browser. It is invisible to
+    `grep marimo-error` and does not change the exporter's exit code; only
+    stderr reports it. `tests/test_notebooks.py` now catches it in the notebook,
+    and this catches it at the source.
+    """
+    value = float(value)
+    if not np.isfinite(value):
+        print(f'{name} = float("nan")')
+    else:
+        print(f"{name} = {format(value, fmt)}")
+
+
 def _advance(states):
     return integrate.rk4(
         systems.lorenz96, states, _STEP_GRID, forcing=FORCING
@@ -223,7 +240,7 @@ def error_correlation(experiment) -> None:
           f"  (its OWN sampling floor is about "
           f"{1.0 / np.sqrt(counted):.3f}, so this is a bound, not a value)")
     print(f"ERRCORR_CYCLES = {counted}")
-    print(f"ERRCORR_FLOOR = {1.0 / np.sqrt(counted):.6f}")
+    _scalar("ERRCORR_FLOOR", 1.0 / np.sqrt(counted), ".6f")
     _emit("ERRCORR_TRUE", true_corr.ravel(), ".5f", per_line=N_SITES)
     _emit("ERRCORR_PROFILE_TRUE", profile(true_corr), ".5f", per_line=11)
 
@@ -346,7 +363,7 @@ def localisation_map(experiment) -> None:
     print(f"MAP_MEMBERS = {MEMBERS}")
     print(f"MAP_CUTOFF_LABELS = {labels}")
     print(f"MAP_BEST_CUTOFF = {tuple(best_cutoff)}")
-    print(f"CLIM_STD = {experiment.clim_std:.6f}")
+    _scalar("CLIM_STD", experiment.clim_std, ".6f")
     print(f"OBS_SIGMA = {OBS_SIGMA}")
     print(f"INFLATIONS_TRIED = {INFLATIONS}")
     _emit("MAP_ERROR", errors.ravel(), ".6f", per_line=len(CUTOFFS))

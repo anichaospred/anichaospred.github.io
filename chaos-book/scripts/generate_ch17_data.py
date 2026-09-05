@@ -84,6 +84,23 @@ def _emit(name: str, values, fmt: str = ".6e", per_line: int = 8) -> None:
     print(")")
 
 
+def _scalar(name: str, value, fmt: str = ".6f") -> None:
+    """Emit one float, spelling a non-finite one as `float("nan")`.
+
+    A bare `nan` in the generated data is valid Python only where numpy is in
+    scope under that name, which in a marimo data cell it is not -- so it
+    becomes a NameError in the reader's browser. It is invisible to
+    `grep marimo-error` and does not change the exporter's exit code; only
+    stderr reports it. `tests/test_notebooks.py` now catches it in the notebook,
+    and this catches it at the source.
+    """
+    value = float(value)
+    if not np.isfinite(value):
+        print(f'{name} = float("nan")')
+    else:
+        print(f"{name} = {format(value, fmt)}")
+
+
 def _advance(states, steps=CYCLE_STEPS):
     grid = np.linspace(0.0, steps * DT, steps + 1)
     return integrate.rk4(systems.lorenz96, states, grid, forcing=FORCING)[-1]
@@ -352,7 +369,7 @@ def score_constructions(cases):
     print(f"METHODS = {METHODS}")
     print(f"MEMBERS = {MEMBERS}")
     print(f"N_CASES = {len(cases)}")
-    print(f"ANALYSIS_ERROR = {per_component:.6f}")
+    _scalar("ANALYSIS_ERROR", per_component, ".6f")
     print(f"RANK_LEAD = {LEADS[rank_lead]}")
     for name in METHODS:
         _emit(f"SPREAD_{name}",
@@ -487,8 +504,8 @@ def brier_block(cases, amplitude) -> None:
     print("#     the gain.")
     print(f"RECAL_METHOD = '{worst}'")
     print(f"RELDIAG_BINS = 8")
-    print(f"EVENT_THRESHOLD = {threshold:.6f}")
-    print(f"EVENT_BASE_RATE = {float(outcomes.mean()):.6f}")
+    _scalar("EVENT_THRESHOLD", threshold, ".6f")
+    _scalar("EVENT_BASE_RATE", float(outcomes.mean()), ".6f")
     print(f"EVENT_LEAD = {EVENT_LEAD}")
     print(f"EVENT_SITE = {EVENT_SITE}")
     _emit("RECAL_BEFORE", [ensemble.brier_score(probs, outcomes), *before],

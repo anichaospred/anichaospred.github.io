@@ -55,6 +55,23 @@ def _emit(name: str, values, fmt: str = ".6g", per_line: int = 8) -> None:
     print(")")
 
 
+def _scalar(name: str, value, fmt: str = ".6f") -> None:
+    """Emit one float, spelling a non-finite one as `float("nan")`.
+
+    A bare `nan` in the generated data is valid Python only where numpy is in
+    scope under that name, which in a marimo data cell it is not -- so it
+    becomes a NameError in the reader's browser. It is invisible to
+    `grep marimo-error` and does not change the exporter's exit code; only
+    stderr reports it. `tests/test_notebooks.py` now catches it in the notebook,
+    and this catches it at the source.
+    """
+    value = float(value)
+    if not np.isfinite(value):
+        print(f'{name} = float("nan")')
+    else:
+        print(f"{name} = {format(value, fmt)}")
+
+
 def l63_trajectory(t_final: float = 800.0) -> np.ndarray:
     grid = integrate.trajectory_grid(t_final=t_final, dt=DT)
     return integrate.rk4(
@@ -86,7 +103,7 @@ def correlation_curves() -> None:
     )
     print(f"# --- Lorenz 63 correlation sums ---")
     print(f"# {prepared.shape[0]} samples, attractor diameter {diameter:.4f}")
-    print(f"L63_DIAMETER = {diameter:.6f}")
+    _scalar("L63_DIAMETER", diameter, ".6f")
     _emit("L63_RADII", radii)
     for theiler in THEILERS:
         started = time.perf_counter()
@@ -112,9 +129,9 @@ def correlation_curves() -> None:
         t_final=400.0,
         t_transient=30.0,
     )
-    print(f"L63_D2 = {d2:.4f}")
-    print(f"L63_DKY = {lyapunov.kaplan_yorke_dimension(spectrum):.4f}")
-    print(f"L63_HKS = {lyapunov.ks_entropy(spectrum):.4f}")
+    _scalar("L63_D2", d2, ".4f")
+    _scalar("L63_DKY", lyapunov.kaplan_yorke_dimension(spectrum), ".4f")
+    _scalar("L63_HKS", lyapunov.ks_entropy(spectrum), ".4f")
     _emit("L63_SPECTRUM", spectrum, ".6f")
 
 
@@ -127,10 +144,10 @@ def henon_curve() -> None:
         points, fit_range=(0.005, 0.06), theiler=1, max_points=MAX_POINTS
     )
     print(f"\n# --- Henon map, {points.shape[0]} points ---")
-    print(f"HENON_DIAMETER = {diameter:.6f}")
+    _scalar("HENON_DIAMETER", diameter, ".6f")
     _emit("HENON_RADII", radii)
     _emit("HENON_C", c, ".6e")
-    print(f"HENON_D2 = {d2:.4f}")
+    _scalar("HENON_D2", d2, ".4f")
 
 
 def box_curves() -> None:
