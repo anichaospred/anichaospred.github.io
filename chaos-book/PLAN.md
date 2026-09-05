@@ -61,11 +61,18 @@ start and no link is dead.
 
 ### Part I — What predictability means
 
-1. **What is predictability?** — Practical vs. intrinsic limits; predictability of
-   the first kind (initial conditions) and the second (boundary forcing); the forecast
-   as a probability distribution rather than a trajectory. *Notebook:* the same L63
-   forecast scored three ways — single run, ensemble, climatology — so the reader sees
-   that "skill" depends on the question asked. *Knob:* lead time.
+1. ★ **What is predictability?** — Four jobs the word does, and the last two measured
+   **in the same units on the same system**, which is what makes them comparable. The
+   same 200 L63 cases forecast three ways from the same initial uncertainty: the single
+   run stops beating climatology at lead 5.8 (RMSE) and 5.5 (CRPS) — *actively worse
+   than knowing nothing* — while the ensemble never crosses at all. Then both kinds of
+   predictability on one axis in nats: first-kind information falls 2.76 → 0.038 over
+   20 TU, second-kind information is a **constant** that never decays, and they cross at
+   a lead set by the size of the forcing change (6.0, 10.5, 18.0 TU for
+   $\rho\to36, 32, 30$; never, for $\rho\to29$). That third column is the whole of
+   Part VI in one number. Care taken and recorded: averaged over 32 starts because a
+   single start is not monotone, with a *measured* estimator noise floor of 0.0097 nats
+   that the smallest forcing signal sits only 1.5× above. *Knob:* lead time.
 2. **A short history of numerical weather prediction** — Richardson's forecast
    factory and why his 1922 hand-computation failed; Bjerknes' programme; the 1950
    ENIAC barotropic forecasts; the growth of operational skill. *Notebook:* the
@@ -405,23 +412,23 @@ Pyodide build every reader's browser receives.
 
 | | Count |
 |---|---|
-| Chapters live | **19** (4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22) |
-| Chapters stubbed | 12 |
+| Chapters live | **20** (1, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22) |
+| Chapters stubbed | 11 |
 | `chaoslib` modules | 10 |
-| `chaoslib` tests | 237, all passing |
+| `chaoslib` tests | 265, all passing |
 
 **Next chapters, in priority order** — each already has most of its material in hand:
 
-**Part V is complete.** All eight chapters are live, which makes the remaining work a
-single block plus one piece of tidying.
-
-1. **Part VI** (chapters 23–27, predictability of the second kind) — ENSO and the S2S
-   window, the ocean and decadal prediction, climate projection, Earth system
-   prediction, tipping points. Untouched, and now the largest remaining block of the
-   book. Chapter 22 ends by pointing directly at it.
-2. **Ch. 20's diet** — unblocked since chapter 19; see the note below.
-3. **Part VII** (chapters 28–29, frontiers) and **Part VIII** (30–31, optional
-   structure).
+1. **Ch. 2** (history of NWP) — Part I, and the only one of the three whose notebook is
+   genuinely new numerics: a shallow-water column initialised out of balance, so
+   Richardson's failure is reproduced rather than described. Needs a balance/gravity-wave
+   system in `chaoslib`.
+2. **Ch. 3** (the hierarchy of models) — the book's organising chapter, and now mostly a
+   *synthesis*: one predictability diagnostic across the logistic map, L63, L96 and 2-D
+   turbulence, all of which `chaoslib` already has.
+3. **Part VI** (chapters 23–27, predictability of the second kind) — the largest
+   remaining block. Chapter 1 now ends by pointing at it with a measured number.
+4. **Ch. 20's diet** — unblocked since chapter 19; see the note below.
 
 ### A second decision on record: splitting chapter 20
 

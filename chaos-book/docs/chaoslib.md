@@ -371,8 +371,25 @@ superstable parameter gives a genuine $-\infty$, not an artefact.
 
 ## `information` — predictability as information
 
-`shannon_entropy`, `relative_entropy`, `mutual_information`, `predictive_information`,
-`gaussian_relative_entropy`, `gaussian_information_components`.
+`shannon_entropy`, `relative_entropy`, `binned_relative_entropy`,
+`mutual_information`, `predictive_information`, `gaussian_relative_entropy`,
+`gaussian_information_components`.
+
+`binned_relative_entropy` histograms a forecast sample and a reference sample on shared
+bins and returns $D(p\|q)$ — "how much does this forecast say that climatology does
+not". **Both histograms are smoothed before normalising**, and that is the substance
+rather than a detail: a raw histogram gives $q_i = 0$ in any bin the reference sample
+happens to miss, and the divergence is then *infinite* the moment one forecast member
+lands there — which for a tight ensemble against a finite climatology is the normal case,
+not a corner case. The default half-count is the Krichevsky–Trofimov estimator
+*[citation needed]*; the value matters little, omitting it turns a finite diagnostic into
+a coin flip between a number and `inf`.
+
+It is **biased upward** at finite sample size: two samples from the *same* distribution
+give a positive answer of order $(B-1)/2N$, which sets a floor no decaying curve can go
+below. Chapter 1 measures that floor rather than assuming it — 0.0097 nats at 3000
+members and 40 bins — and uses it to explain why its smallest forcing signal never
+produces a crossover.
 
 `gaussian_information_components` returns `(total, signal, dispersion)` — the two ways a
 forecast can be informative, summing to the total exactly. Both are **invariant under any

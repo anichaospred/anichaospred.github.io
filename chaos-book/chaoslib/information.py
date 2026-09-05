@@ -21,6 +21,7 @@ Array = NDArray[np.floating]
 __all__ = [
     "shannon_entropy",
     "relative_entropy",
+    "binned_relative_entropy",
     "mutual_information",
     "predictive_information",
     "gaussian_relative_entropy",
@@ -63,6 +64,57 @@ def relative_entropy(p: Array, q: Array) -> float:
             "q has zero probability where p is positive: D(p||q) is infinite"
         )
     return float(np.sum(p[support] * np.log(p[support] / q[support])))
+
+
+def binned_relative_entropy(
+    sample: Array,
+    reference: Array,
+    bins: Array,
+    smoothing: float = 0.5,
+) -> float:
+    r"""Information in a forecast sample beyond a reference sample, in nats.
+
+    Histograms both samples on the same ``bins`` and returns
+    :math:`D(p\|q)` with :math:`p` the forecast and :math:`q` the reference --
+    the natural estimator of "how much does this forecast tell me that the
+    climatology does not".
+
+    **Both histograms are smoothed before normalising**, by adding
+    ``smoothing`` to every bin count. This is not cosmetic. A raw histogram
+    gives :math:`q_i = 0` in any bin the reference sample happens to miss, and
+    :math:`D(p\|q)` is then *infinite* the moment a single forecast member lands
+    there -- which for a tight forecast ensemble and a finite climatology
+    happens constantly. The default of one half is the Krichevsky-Trofimov
+    estimator *[citation needed]*; the value matters little, but omitting it
+    entirely turns a finite diagnostic into a coin flip between a number and
+    ``inf``.
+
+    Two properties worth remembering when reading a curve of this against lead
+    time. It is **non-negative**, and zero only when the two histograms agree.
+    And it is **biased upward** at finite sample size: two samples drawn from
+    the *same* distribution give a positive value of order
+    :math:`(B-1)/2N` for :math:`B` bins and :math:`N` members, which sets the
+    noise floor a decaying curve cannot go below. Chapter 1 measures that floor
+    rather than assuming it.
+    """
+    sample = np.asarray(sample, dtype=float).ravel()
+    reference = np.asarray(reference, dtype=float).ravel()
+    edges = np.asarray(bins, dtype=float).ravel()
+    if edges.size < 2:
+        raise ValueError("bins must have at least two edges")
+    if smoothing <= 0.0:
+        raise ValueError(
+            "smoothing must be positive; a raw histogram makes D(p||q) "
+            "infinite whenever the forecast lands outside the reference's "
+            "support, which is the normal case rather than the exception"
+        )
+
+    n_bins = edges.size - 1
+    forecast = np.histogram(sample, bins=edges)[0] + smoothing
+    climate = np.histogram(reference, bins=edges)[0] + smoothing
+    forecast = forecast / forecast.sum()
+    climate = climate / climate.sum()
+    return relative_entropy(forecast, climate)
 
 
 def mutual_information(joint: Array, correction: str = "none") -> float:
