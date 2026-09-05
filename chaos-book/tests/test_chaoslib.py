@@ -38,6 +38,7 @@ from chaoslib import (
     spatial,
     systems,
     turbulence,
+    verification,
 )
 
 SIGMA, RHO, BETA = 10.0, 28.0, 8.0 / 3.0
@@ -3815,3 +3816,215 @@ def test_error_seeded_at_small_scale_cascades_upscale():
     # The error has moved to larger scales: the low band gained, the seed band lost.
     assert low1 > 10.0 * low0, (low0, low1)
     assert high1 < 0.6 * high0, (high0, high1)
+
+
+# ==========================================================================
+# verification
+#
+# Four exact statements, and they carry chapter 22. Murphy's MSE split is
+# an identity. An undamped forecast's skill score against climatology is
+# exactly 2r-1, so it ties at r = 1/2 -- which is where the conventional
+# 0.6 threshold comes from. Optimal damping gives MSE = sigma^2(1-r^2).
+# And independent observation error inflates the MSE by exactly its own
+# variance, which is the correction the whole chapter turns on.
+# ==========================================================================
+@pytest.fixture
+def correlated_pair():
+    """A truth, and a forecast with a prescribed correlation and variance."""
+
+    def build(correlation, n_cases=20000, sigma=2.0, seed=0, scale=1.0):
+        rng = np.random.default_rng(seed)
+        truth = rng.normal(0.0, sigma, n_cases)
+        noise = rng.normal(0.0, 1.0, n_cases)
+        noise = noise - noise.mean()
+        # Orthogonalise against truth so the correlation is exactly as asked.
+        noise = noise - (noise @ truth) / (truth @ truth) * truth
+        forecast = (
+            correlation * truth / truth.std()
+            + np.sqrt(1.0 - correlation**2) * noise / noise.std()
+        )
+        forecast = forecast * (scale * truth.std() / forecast.std())
+        # Centre on the truth's OWN sample mean. The identity being tested
+        # assumes an exactly unbiased forecast, and leaving the forecast centred
+        # on zero instead left a bias^2 term of order sigma^2/n in the MSE --
+        # small, but larger than the tolerance the identity itself deserves.
+        forecast = forecast - forecast.mean() + truth.mean()
+        return forecast, truth
+
+    return build
+
+
+@pytest.mark.parametrize(
+    "forecast_kind", ["biased_and_damped", "inflated", "pure_noise"]
+)
+def test_mse_decomposition_is_exact(forecast_kind):
+    r"""Bias, amplitude and phase sum to the MSE to machine precision."""
+    rng = np.random.default_rng(1)
+    n_cases = 20000
+    truth = rng.normal(0.0, 2.0, n_cases)
+    forecast = {
+        "biased_and_damped": 0.6 * truth + 0.8 + rng.normal(0.0, 1.0, n_cases),
+        "inflated": 1.5 * truth + rng.normal(0.0, 0.5, n_cases),
+        "pure_noise": rng.normal(0.0, 2.0, n_cases),
+    }[forecast_kind]
+
+    parts = verification.mse_decomposition(forecast, truth)
+    assert sum(parts) == pytest.approx(
+        float(np.mean((forecast - truth) ** 2)), abs=1e-12
+    )
+    # And each part is picked up by the term that should own it.
+    bias, amplitude, phase = parts
+    if forecast_kind == "biased_and_damped":
+        assert bias > 0.5
+    if forecast_kind == "inflated":
+        assert amplitude > 5.0 * bias
+    if forecast_kind == "pure_noise":
+        assert phase > 20.0 * (bias + amplitude)
+
+
+@pytest.mark.parametrize("correlation", [0.3, 0.45, 0.5, 0.55, 0.7])
+def test_undamped_skill_score_is_exactly_two_r_minus_one(
+    correlated_pair, correlation
+):
+    r"""Where the 0.6 threshold comes from.
+
+    An unbiased forecast whose anomaly variance matches the truth's has
+    $\mathrm{MSE} = 2\sigma^2(1-r)$ against a climatological $\sigma^2$, so its
+    skill score is exactly $2r-1$ and it ties with climatology at $r = 1/2$.
+    The operational threshold of 0.6 is that number plus a margin -- a statement
+    about undamped forecasts, not about predictability.
+    """
+    forecast, truth = correlated_pair(correlation)
+    # 1e-6, not 1e-12: the identity is exact, but the fixture builds its input
+    # by orthogonalising and rescaling, which lands the correlation within about
+    # 1e-7 of the requested value. The tolerance measures the construction, not
+    # the identity -- six digits of agreement is still a real test of it.
+    assert verification.anomaly_correlation(forecast, truth) == pytest.approx(
+        correlation, abs=1e-6
+    )
+    assert verification.mse_skill_score(forecast, truth) == pytest.approx(
+        2.0 * correlation - 1.0, abs=1e-6
+    )
+    assert verification.acc_threshold_for_climatological_skill() == 0.5
+
+
+def test_optimal_damping_gives_mse_one_minus_r_squared(correlated_pair):
+    r"""And a damped forecast beats climatology at *any* non-zero correlation.
+
+    $\mathrm{MSE} = \sigma_t^2(1-r^2)$ after the least-squares rescaling, which
+    is below $\sigma_t^2$ for every $r \neq 0$. So the threshold for usefulness
+    is not a property of the atmosphere; it is a property of a decision not to
+    post-process.
+    """
+    forecast, truth = correlated_pair(0.4, scale=1.8, seed=3)
+    correlation = verification.anomaly_correlation(forecast, truth)
+    multiplier, ratio = verification.optimal_damping(forecast, truth)
+
+    assert ratio == pytest.approx(1.0 - correlation**2, abs=1e-9)
+    damped = truth.mean() + multiplier * (forecast - forecast.mean())
+    assert float(np.mean((damped - truth) ** 2)) / float(
+        np.var(truth)
+    ) == pytest.approx(ratio, rel=1e-6)
+    # Useful at a correlation where the undamped forecast is not.
+    assert verification.mse_skill_score(forecast, truth) < 0.0
+    assert verification.mse_skill_score(damped, truth) > 0.0
+    assert verification.acc_threshold_for_climatological_skill(damped=True) == 0.0
+
+
+@pytest.mark.parametrize("obs_sigma", [0.5, 1.0, 2.0])
+def test_independent_observation_error_inflates_mse_by_its_own_variance(obs_sigma):
+    r"""$\mathbb{E}(f-y)^2 = \mathbb{E}(f-t)^2 + \sigma_o^2$, and the
+    correction recovers the score you wanted."""
+    rng = np.random.default_rng(2)
+    n_cases = 200000
+    truth = rng.normal(0.0, 2.0, n_cases)
+    forecast = 0.7 * truth + rng.normal(0.0, 1.2, n_cases)
+    observations = truth + rng.normal(0.0, obs_sigma, n_cases)
+
+    mse_truth = float(np.mean((forecast - truth) ** 2))
+    mse_obs = float(np.mean((forecast - observations) ** 2))
+    assert mse_obs == pytest.approx(mse_truth + obs_sigma**2, rel=0.02)
+    assert verification.correct_mse_for_observation_error(
+        mse_obs, obs_sigma**2
+    ) == pytest.approx(mse_truth, rel=0.02)
+
+
+@pytest.mark.parametrize("obs_sigma", [0.5, 1.0, 2.0])
+def test_observation_error_attenuates_the_anomaly_correlation(obs_sigma):
+    r"""$\mathrm{ACC}_{\mathrm{obs}} = \mathrm{ACC}_{\mathrm{true}}
+    (1+\sigma_o^2/\sigma_t^2)^{-1/2}$ -- attenuation by measurement error."""
+    rng = np.random.default_rng(5)
+    n_cases = 200000
+    truth = rng.normal(0.0, 2.0, n_cases)
+    forecast = 0.7 * truth + rng.normal(0.0, 1.2, n_cases)
+    observations = truth + rng.normal(0.0, obs_sigma, n_cases)
+
+    acc_truth = verification.anomaly_correlation(forecast, truth)
+    acc_obs = verification.anomaly_correlation(forecast, observations)
+    predicted = acc_truth / np.sqrt(1.0 + obs_sigma**2 / float(np.var(truth)))
+    assert acc_obs == pytest.approx(predicted, rel=0.02)
+    assert verification.correct_acc_for_observation_error(
+        acc_obs, obs_sigma**2, float(np.var(truth))
+    ) == pytest.approx(acc_truth, rel=0.02)
+    # Noisy verification always makes the forecast look worse, never better.
+    assert acc_obs < acc_truth
+
+
+def test_correlated_observation_error_breaks_the_correction_visibly():
+    r"""The failure mode the chapter is about, and why it is not clipped.
+
+    When the verifying observations were *assimilated* into the analysis the
+    forecast started from, the two error terms share a component, the cross term
+    no longer vanishes, and the score is optimistic. Applying the correction
+    then returns a **negative** mean-square error -- an impossible number, which
+    is the point: it announces its own failure rather than quietly returning a
+    plausible wrong answer.
+    """
+    rng = np.random.default_rng(8)
+    n_cases = 100000
+    truth = rng.normal(0.0, 2.0, n_cases)
+    obs_error = rng.normal(0.0, 1.0, n_cases)
+    observations = truth + obs_error
+    # An analysis pulled most of the way towards those observations, as a good
+    # assimilation of an accurate instrument would be.
+    analysis = truth + 0.85 * obs_error + rng.normal(0.0, 0.1, n_cases)
+
+    mse_truth = float(np.mean((analysis - truth) ** 2))
+    mse_obs = float(np.mean((analysis - observations) ** 2))
+    assert mse_obs < mse_truth + 1.0        # inflation short of sigma_o^2
+    corrected = verification.correct_mse_for_observation_error(mse_obs, 1.0)
+    assert corrected < 0.0
+    assert not np.isclose(corrected, mse_truth, rtol=0.5)
+
+
+def test_skill_horizon_interpolates_and_reports_the_first_crossing():
+    """Sub-grid resolution matters: rounding to the sampling interval
+    quantises every horizon in the chapter and erases differences smaller
+    than it."""
+    times = np.array([0.0, 1.0, 2.0, 3.0])
+    falling = np.array([1.0, 0.8, 0.4, 0.2])
+    assert verification.skill_horizon(times, falling, 0.6) == pytest.approx(1.5)
+    rising = np.array([0.0, 0.2, 0.8, 1.0])
+    assert verification.skill_horizon(
+        times, rising, 0.6, decreasing=False
+    ) == pytest.approx(1 + 2.0 / 3.0)
+    assert np.isnan(verification.skill_horizon(times, falling, -1.0))
+    # A curve that dips, recovers and dips again reports the FIRST crossing.
+    wobbly = np.array([1.0, 0.5, 0.9, 0.1])
+    assert verification.skill_horizon(times, wobbly, 0.6) == pytest.approx(0.8)
+
+
+def test_anomaly_correlation_ignores_a_uniform_amplitude_error():
+    """Which is exactly why it must be read alongside a mean-square error."""
+    rng = np.random.default_rng(12)
+    truth = rng.normal(0.0, 1.0, 5000)
+    forecast = 0.6 * truth + rng.normal(0.0, 0.5, 5000)
+    climatology = np.zeros_like(truth)
+
+    base = verification.anomaly_correlation(forecast, truth, climatology)
+    scaled = verification.anomaly_correlation(3.0 * forecast, truth, climatology)
+    assert scaled == pytest.approx(base, abs=1e-12)
+    # The MSE is not fooled.
+    assert float(np.mean((3.0 * forecast - truth) ** 2)) > 3.0 * float(
+        np.mean((forecast - truth) ** 2)
+    )
