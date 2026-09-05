@@ -212,10 +212,25 @@ start and no link is dead.
     answer by tens of degrees. Sensitivity and growth nearly coincide in Lorenz 63,
     where one singular value dominates, and are 89° apart in Lorenz 96 — a reminder of
     what a three-variable model cannot show. *Knob:* optimisation window, the norm.
-17. **Probabilistic forecast design** — Ensemble construction (singular vectors, bred
-    vectors, EDA); reliability; CRPS, Brier score, rank histograms; the value of a
-    probabilistic forecast to a decision. *Notebook:* build an ensemble three ways and
-    score all three. *Knob:* ensemble size, perturbation strategy.
+17. ★ **Probabilistic forecast design** — Five constructions from the *same* LETKF
+    analysis, at the same member count and the same amplitude, so the comparison is
+    about direction alone. **Growing fastest is the wrong objective**: singular vectors
+    are over-dispersed by two thirds at medium lead (spread/error 1.67) and score worse
+    than isotropic noise at short lead. **Bred vectors collapse**, at a rate set by how
+    well separated $\lambda_1$ is — 2 e-foldings on L63, 8 on L96 — and the degeneracy
+    is worse than "narrow": breeding fixes a direction but not a *sign*, so 85 % of
+    members end within 26° of $\pm$ one direction (39 % aligned, 46 % anti), making the
+    ensemble two points rather than a sample. It costs spread/error 0.67 at lead 2;
+    orthogonalising each cycle recovers it. **Construction beats size**: CRPS
+    $= a + b/k$, where $b$ is mostly the estimator's own finite-sample bias (~5 % at
+    $k=20$) and the asymptote $a$ is where construction shows — no ensemble size closes
+    a gap in $a$. Murphy's decomposition is **exact** with distinct-value bins, and
+    separates the repairable from the irreducible: the EDA has the most resolution and
+    the worst reliability, and relabelling fixes the second while leaving the first
+    unmoved to five decimals. The payoff is the cost-loss curve: the same information
+    served probabilistically has value at 19 of 19 ratios against 16, and the
+    deterministic version is **actively harmful** ($V=-1.43$) at the extremes.
+    *Knob:* ensemble size, perturbation strategy. †
 18. ★ **Variational data assimilation** — One cost function, and how much follows from
     keeping $\mathcal{M}$ inside it. Observe $x$ alone and 3D-Var returns $y$ and $z$
     *bitwise unchanged*, while 4D-Var cuts the error in the unobserved $y$ by 37 % — the
@@ -371,19 +386,20 @@ Pyodide build every reader's browser receives.
 
 | | Count |
 |---|---|
-| Chapters live | **17** (4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 18, 19, 20, 21) |
-| Chapters stubbed | 14 |
+| Chapters live | **18** (4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21) |
+| Chapters stubbed | 13 |
 | `chaoslib` modules | 10 |
-| `chaoslib` tests | 209, all passing |
+| `chaoslib` tests | 219, all passing |
 
 **Next chapters, in priority order** — each already has most of its material in hand:
 
-1. **Ch. 17** (probabilistic forecast design) — `chaoslib.ensemble` is tested and
-   still barely used: chapters 11, 19 and 21 all end by pointing at it, and chapter 19
-   treated the ensemble purely as a covariance estimator rather than as a forecast.
-2. **Ch. 22** (verification) — the close of Part V. Chapters 13, 18, 19 and 21 all
-   defer the observation-error problem to it.
-3. **Ch. 20's diet** — now unblocked; see the note below.
+1. **Ch. 22** (verification) — the close of Part V, and now the only stub left in it.
+   Chapters 13, 17, 18, 19 and 21 all defer the observation-error problem to it, and
+   chapter 17 in particular scored every forecast against a known truth that no
+   operational centre ever has.
+2. **Ch. 20's diet** — unblocked since chapter 19; see the note below.
+3. **Part VI** (chapters 23–27, predictability of the second kind) — untouched, and the
+   largest remaining block of the book.
 
 ### A second decision on record: splitting chapter 20
 

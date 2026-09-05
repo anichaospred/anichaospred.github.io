@@ -1493,6 +1493,235 @@ def test_ring_localisation_is_circulant_and_wraps_around():
 # ==========================================================================
 # ensemble
 # ==========================================================================
+# --------------------------------------------------------------------------
+# chapter 17: probabilistic forecast design
+#
+# Two exact anchors here. Murphy's decomposition of the Brier score is an
+# identity, not an approximation, when the bins are the distinct forecast
+# values -- and an approximate decomposition is very easy to write by
+# accident, with a residual that looks like a real effect. The value score
+# is exactly 1 for a perfect forecast and exactly 0 for climatology, at
+# every cost-loss ratio.
+# --------------------------------------------------------------------------
+@pytest.mark.parametrize("n_members,n_cases", [(20, 4000), (8, 2000), (50, 6000)])
+def test_brier_decomposition_is_exact(n_members, n_cases):
+    r"""$\mathrm{BS} = \mathrm{REL} - \mathrm{RES} + \mathrm{UNC}$, to machine
+    precision.
+
+    Exact because the default binning is the set of *distinct forecast values*.
+    An ensemble of $k$ members can only issue $0, 1/k, \ldots, 1$, so those are
+    the natural bins; equal-width binning of already-discrete forecasts leaves a
+    within-bin variance term that shows up as a residual.
+    """
+    rng = np.random.default_rng(n_members)
+    latent = rng.uniform(0.0, 1.0, n_cases)
+    outcomes = (rng.uniform(0.0, 1.0, n_cases) < latent).astype(float)
+    probabilities = np.round(latent * n_members) / n_members
+
+    score = ensemble.brier_score(probabilities, outcomes)
+    reliability, resolution, uncertainty = ensemble.brier_decomposition(
+        probabilities, outcomes
+    )
+    assert score == pytest.approx(
+        reliability - resolution + uncertainty, abs=1e-14
+    )
+    # A near-perfectly-calibrated forecast: reliability should be tiny, and
+    # resolution a large fraction of the uncertainty it is subtracted from.
+    assert reliability < 0.01 * uncertainty
+    assert resolution > 0.25 * uncertainty
+
+
+def test_brier_decomposition_separates_calibration_from_information():
+    r"""Recalibration removes reliability error and leaves resolution alone.
+
+    This is the practical content of the decomposition. Take a well-calibrated
+    forecast and corrupt it by pushing every probability towards the extremes --
+    a classic overconfidence. Reliability gets much worse; **resolution does
+    not**, because the ordering of the forecasts is unchanged and resolution
+    depends only on that ordering through the observed frequencies.
+    """
+    rng = np.random.default_rng(4)
+    n_cases = 8000
+    latent = rng.uniform(0.05, 0.95, n_cases)
+    outcomes = (rng.uniform(0.0, 1.0, n_cases) < latent).astype(float)
+    honest = np.round(latent * 20) / 20
+    # Monotone, so it cannot change which cases are ranked above which.
+    overconfident = np.clip(0.5 + 2.2 * (honest - 0.5), 0.0, 1.0)
+    overconfident = np.round(overconfident * 20) / 20
+
+    rel_h, res_h, unc = ensemble.brier_decomposition(honest, outcomes)
+    rel_o, res_o, unc_o = ensemble.brier_decomposition(overconfident, outcomes)
+
+    assert unc_o == pytest.approx(unc)          # base rate is untouched
+    assert rel_o > 15.0 * rel_h                 # calibration is wrecked
+    assert res_o == pytest.approx(res_h, rel=0.10)   # information survives
+    assert ensemble.brier_score(overconfident, outcomes) > ensemble.brier_score(
+        honest, outcomes
+    )
+
+
+def test_value_score_anchors_at_zero_and_one():
+    """Exactly 1 for a perfect forecast, exactly 0 for climatology, at every
+    cost-loss ratio; and sharply negative for a forecast that is inverted."""
+    rng = np.random.default_rng(2)
+    n_cases = 5000
+    outcomes = (rng.uniform(0.0, 1.0, n_cases) < 0.3).astype(float)
+    ratios = np.linspace(0.05, 0.95, 19)
+
+    perfect = ensemble.value_score(outcomes, outcomes, ratios)
+    climate = ensemble.value_score(
+        np.full(n_cases, outcomes.mean()), outcomes, ratios
+    )
+    inverted = ensemble.value_score(1.0 - outcomes, outcomes, ratios)
+
+    assert np.allclose(perfect, 1.0, atol=1e-12)
+    assert np.allclose(climate, 0.0, atol=1e-12)
+    assert inverted.max() < -1.0
+    assert np.all(perfect <= 1.0 + 1e-12)
+
+
+def test_probabilistic_forecast_has_value_over_a_wider_range_than_a_single_threshold():
+    r"""The argument for ensembles that no accuracy score can make.
+
+    A deterministic forecast commits every user to one implicit threshold, so it
+    has value near one cost-loss ratio; a probabilistic forecast lets each user
+    apply their own $\alpha$.
+
+    The ensemble here is **reliable by construction**: truth and members are
+    drawn from the same distribution about a latent state, so the truth is
+    exchangeable with a member. That matters. A first version drew members with
+    unit noise about a mean whose error was $1/\sqrt{k}$ -- an over-dispersed
+    ensemble -- and the deterministic forecast then beat it over the middle of
+    the range, which says nothing about probabilistic forecasting and everything
+    about a badly built ensemble.
+    """
+    rng = np.random.default_rng(6)
+    n_cases, n_members, sigma = 20000, 20, 1.0
+    latent = rng.normal(size=n_cases)
+    truth = latent + rng.normal(0.0, sigma, n_cases)
+    members = latent[:, None] + rng.normal(0.0, sigma, (n_cases, n_members))
+    outcomes = (truth > 0.5).astype(float)
+
+    probabilistic = np.mean(members > 0.5, axis=1)
+    # One number, one implicit decision rule, the same for every user.
+    deterministic = (members.mean(axis=1) > 0.5).astype(float)
+
+    ratios = np.linspace(0.05, 0.95, 19)
+    prob_value = ensemble.value_score(probabilistic, outcomes, ratios)
+    det_value = ensemble.value_score(deterministic, outcomes, ratios)
+
+    # Wider range of users served...
+    assert (prob_value > 0.05).sum() > (det_value > 0.05).sum() + 3
+    # ...a higher peak, since a calibrated ensemble also beats a point forecast
+    # for the user it suits best...
+    assert prob_value.max() > det_value.max()
+    # ...and, above all, it is never catastrophic. A single threshold is worse
+    # than useless for users at the extremes.
+    assert prob_value.min() > -0.2
+    assert det_value.min() < -2.0
+
+
+def test_bred_vectors_collapse_onto_one_direction():
+    r"""Breeding finds *the* growing direction, and finds the same one every time.
+
+    Independently seeded bred vectors converge towards each other, so an ensemble
+    built from several of them samples one direction repeatedly and its spread is
+    a fiction. Measured on Lorenz 63, averaged over base states on the attractor
+    -- at a single base state the angle is not monotone in the number of cycles,
+    because the control state is itself advancing around the attractor while the
+    breeding proceeds.
+
+    The growth advantage over a random perturbation is deliberately *not*
+    asserted here. On Lorenz 63 it is large but wildly variable (a factor of 0.4
+    to 21 across base states, median 1.6), because with three variables and one
+    positive exponent a random direction already has an order-one projection onto
+    the unstable one. Chapter 17 measures growth where it is meaningful.
+    """
+    dt, cycle, amplitude = 0.005, 0.25, 1e-3
+    attractor = integrate.rk4(
+        systems.lorenz63, np.array([1.0, 1.0, 20.0]),
+        integrate.trajectory_grid(60.0, dt),
+    )[4000:]
+
+    def mean_pairwise_angle(vectors):
+        unit = vectors / np.linalg.norm(vectors, axis=1, keepdims=True)
+        cosine = np.abs(unit @ unit.T)
+        upper = np.triu_indices(unit.shape[0], 1)
+        return float(np.degrees(np.arccos(np.clip(cosine[upper], 0.0, 1.0))).mean())
+
+    random_angles, bred_angles = [], []
+    for index, base in enumerate(attractor[::1500][:6]):
+        rng = np.random.default_rng(index)
+        naive = rng.normal(size=(4, 3))
+        naive *= amplitude / np.linalg.norm(naive, axis=1, keepdims=True)
+        random_angles.append(mean_pairwise_angle(naive))
+        bred_angles.append(mean_pairwise_angle(ensemble.bred_vectors(
+            systems.lorenz63, base, 4, amplitude, cycle, n_cycles=10, dt=dt,
+            seed=index,
+        )))
+
+    assert np.mean(random_angles) > 50.0
+    assert np.mean(bred_angles) < 25.0
+
+
+def test_orthogonalised_breeding_keeps_the_directions_distinct():
+    """The remedy, and its hard limit: there are only n_state orthogonal
+    directions, and asking for more must fail loudly rather than quietly
+    returning a smaller ensemble."""
+    dt = 0.005
+    base = integrate.rk4(
+        systems.lorenz63, np.array([1.0, 1.0, 20.0]),
+        integrate.trajectory_grid(30.0, dt),
+    )[-1]
+    vectors = ensemble.bred_vectors(
+        systems.lorenz63, base, 3, 1e-3, 0.25, n_cycles=8, dt=dt,
+        orthogonalise=True, seed=0,
+    )
+    assert vectors.shape == (3, 3)
+    unit = vectors / np.linalg.norm(vectors, axis=1, keepdims=True)
+    off_diagonal = np.abs(unit @ unit.T - np.eye(3))
+    assert off_diagonal.max() < 1e-10
+
+    with pytest.raises(ValueError, match="orthogonalise"):
+        ensemble.bred_vectors(
+            systems.lorenz63, base, 6, 1e-3, 0.25, n_cycles=2, dt=dt,
+            orthogonalise=True,
+        )
+
+
+def test_singular_vector_ensemble_is_centred_by_construction(l63_propagator):
+    r"""Including both signs of each singular vector makes the ensemble mean
+    equal the control state *exactly*.
+
+    Not approximately, and not as a happy accident of sampling: the members come
+    in $\pm$ pairs, so they cancel identically. An ensemble that is centred only
+    on average carries a spurious mean displacement that looks exactly like
+    model bias.
+    """
+    members = ensemble.singular_vector_ensemble(l63_propagator, 3, 0.02)
+    assert members.shape == (6, 3)
+    assert np.abs(members.mean(axis=0)).max() == 0.0
+    assert np.allclose(np.linalg.norm(members, axis=1), 0.02)
+
+
+def test_reliability_diagram_bins_on_distinct_forecast_values():
+    """Twenty-one attainable probabilities from twenty members, and a perfectly
+    reliable forecast lies on the diagonal."""
+    rng = np.random.default_rng(9)
+    n_cases = 20000
+    latent = rng.uniform(0.0, 1.0, n_cases)
+    probabilities = np.round(latent * 20) / 20
+    outcomes = (rng.uniform(0.0, 1.0, n_cases) < probabilities).astype(float)
+
+    forecast, observed, counts = ensemble.reliability_diagram(
+        probabilities, outcomes
+    )
+    assert forecast.size == 21
+    assert counts.sum() == n_cases
+    # On the diagonal, to within the sampling error of ~1000 cases per bin.
+    assert np.abs(forecast - observed).max() < 0.06
+
+
 def test_gaussian_perturbations_have_the_requested_amplitude():
     x0 = np.array([1.0, 1.0, 20.0])
     ens = ensemble.gaussian_perturbations(x0, 4000, 0.1, seed=0)

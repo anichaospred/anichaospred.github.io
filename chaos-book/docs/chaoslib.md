@@ -174,11 +174,55 @@ which quietly makes two arbitrary sites of a homogeneous system special.
 
 ## `ensemble` — construction and verification
 
-`gaussian_perturbations`, `ensemble_spread`, `ensemble_mean_error`, `rank_histogram`
-(random tie-breaking), `crps` (fair energy form), `brier_score`.
+**Construction:** `gaussian_perturbations`, `bred_vectors`,
+`singular_vector_ensemble`. **Diagnostics:** `ensemble_spread`,
+`ensemble_mean_error`, `outside_span_fraction`. **Verification:** `rank_histogram`
+(random tie-breaking), `crps` (fair energy form), `brier_score`,
+`reliability_diagram`, `brier_decomposition`, `value_score`.
 
 Tested against the closed-form Gaussian CRPS, and against the calibration identity
 that a reliable ensemble has RMS spread equal to the RMS error of its mean.
+
+`bred_vectors` runs the Toth–Kalnay breeding cycle: perturb, advance, difference,
+rescale, repeat. No adjoint and no tangent linear model, which is why it was the
+operational scheme at NCEP while ECMWF ran singular vectors. **Independently bred
+vectors collapse onto each other** — they are all converging to the same leading
+direction — and how fast depends on how well separated the leading Lyapunov exponent
+is: about 2 e-foldings on Lorenz 63, about 8 on Lorenz 96, which has thirteen positive
+exponents of similar size. `orthogonalise=True` re-orthogonalises after **each** cycle,
+turning breeding into the Benettin construction of `chaoslib.lyapunov`; doing it once at
+the end would be useless, because by then the set is nearly rank one and orthogonalising
+it manufactures the extra directions out of rounding error. It requires
+`n_vectors <= n_state` and raises rather than quietly returning a smaller set — a guard
+that caught chapter 17's own generator asking for four orthogonal directions in three
+dimensions.
+
+Breeding must also run **along** the trajectory being perturbed. Breeding forward from
+the analysis state produces vectors belonging to a state however far downstream the
+breeding took, which for a useful number of e-foldings is far indeed; the chapter's
+generator therefore carries the perturbations as persistent state across the
+assimilation cycle, as the operational scheme did.
+
+`singular_vector_ensemble` returns $\pm$ pairs, so the ensemble mean equals the control
+state **exactly** rather than on average. An ensemble centred only on average carries a
+spurious mean displacement indistinguishable from model bias.
+
+`brier_decomposition` gives Murphy's $\mathrm{BS} = \mathrm{REL} - \mathrm{RES} +
+\mathrm{UNC}$, and the identity holds to machine precision because
+`reliability_diagram` bins on the **distinct forecast values** rather than on
+equal-width bins. An ensemble of $k$ members can only issue $0, 1/k, \ldots, 1$, so
+those *are* the natural bins; equal-width binning of already-discrete forecasts leaves a
+within-bin variance term that appears as a residual and is easy to mistake for a real
+effect. The distinction the decomposition buys is that **reliability is fixable after the
+fact and resolution is not**.
+
+`value_score` is Richardson's relative economic value against a cost-loss ratio
+$\alpha = C/L$: exactly 1 for a perfect forecast and exactly 0 for climatology, at every
+$\alpha$. It takes an *array* of ratios because the point is that **value is a curve,
+not a number** — a deterministic forecast forces one threshold on every user, a
+probabilistic one lets each user choose. It protects when $p \ge \alpha$, not $p >
+\alpha$: with discrete ensemble probabilities $\alpha$ frequently lands exactly on an
+attainable forecast value, and the two conventions then differ by a whole bin of cases.
 
 ## `errorgrowth` — saturation and the upscale cascade
 
