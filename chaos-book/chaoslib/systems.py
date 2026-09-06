@@ -23,6 +23,7 @@ Array = NDArray[np.floating]
 
 __all__ = [
     "lorenz63",
+    "coupled_ocean_atmosphere",
     "lorenz63_forced",
     "lorenz63_forcing",
     "lorenz63_jacobian",
@@ -131,6 +132,98 @@ def lorenz63_forcing(
     """
     return rho_mean + rho_amplitude * np.sin(
         2.0 * np.pi * np.asarray(t, dtype=float) / period
+    )
+
+
+def coupled_ocean_atmosphere(
+    t: float,
+    state: Array,
+    sigma: float = 10.0,
+    rho: float = 28.0,
+    beta: float = 8.0 / 3.0,
+    ocean_time: float = 50.0,
+    forcing_strength: float = 30.0,
+    feedback: float = -0.02,
+    reference_z: float = 23.6,
+) -> Array:
+    r"""A fast chaotic "atmosphere" two-way coupled to a slow "ocean".
+
+    .. math::
+        \dot x &= \sigma(y-x) \\
+        \dot y &= x(\rho + \kappa S) - y - xz \\
+        \dot z &= xy - \beta z \\
+        \dot S &= \big[-S + \lambda (z - z_{\mathrm{ref}})\big] / T
+
+    The state is ``[x, y, z, S]``. The first three are Lorenz 63; the fourth is a
+    single slow variable with relaxation time :math:`T`, driven by the fast
+    system's :math:`z` and feeding back on it by modulating the effective
+    Rayleigh number.
+
+    That form is Hasselmann's picture of the climate system *[citation needed]*:
+    an ocean whose long memory comes not from slow internal dynamics but from
+    **integrating fast weather**. A first-order relaxation driven by a rapidly
+    decorrelating input has variance concentrated at low frequency and an
+    autocorrelation time of order :math:`T`, however short the driving is.
+
+    The coupling is genuinely two-way, which is the whole difference from
+    chapter 23's *prescribed* forcing. Two limits are exact and are used as
+    tests rather than assumed:
+
+    * ``forcing_strength = 0`` and ``S(0) = 0`` leaves the fast system
+      **bitwise** identical to :func:`lorenz63` and :math:`S` exactly zero for
+      all time. The :math:`y` equation is grouped as
+      :math:`x(\rho + \kappa S - z) - y` deliberately, to match how
+      :func:`lorenz63` groups it: the algebraically identical
+      :math:`x\rho - y - xz` rounds differently, and the two trajectories then
+      separate by :math:`10^{-14}` immediately and :math:`6\times10^{-6}` by
+      :math:`t=20` -- growing at very nearly :math:`\lambda_1`, which is
+      chapter 6's whole subject turning up inside a rounding difference;
+    * ``forcing_strength = 0`` with :math:`S(0) \neq 0` decays as
+      :math:`S(t) = S(0)e^{-t/T}` while the fast system feels a decaying
+      modulation.
+
+    ``feedback = 0`` gives a *passive* ocean -- driven by the atmosphere but not
+    acting back on it. Chapter 24 uses that as a control, because a slow variable
+    that merely records the weather is not the same thing as one that predicts it.
+
+    **The feedback must be negative, and it must be small.** Both constraints are
+    measured rather than chosen. A positive :math:`\kappa` is a runaway: low
+    :math:`z` drives :math:`S` down, which lowers the effective Rayleigh number,
+    which lowers :math:`z` further, and the system collapses onto the origin
+    within a few hundred time units. A negative :math:`\kappa` is a damping loop
+    and is stable -- but the same loop damps :math:`S` itself, and its memory
+    goes with it:
+
+    ==========  ==============  ================
+    kappa        tau_S (TU)      rho swing
+    ==========  ==============  ================
+    0             35.8            0
+    -0.02         19.2            0.05
+    -0.10          5.6            0.19
+    -0.25          1.8            0.39
+    ==========  ==============  ================
+
+    The loop gain and the feedback amplitude both scale as
+    :math:`\lambda\kappa`, so they cannot be separated: **any coupling strong
+    enough to modulate the atmosphere appreciably has already destroyed the
+    ocean's memory.** That is a property of this model rather than a tuning
+    failure, and chapter 24 reports it instead of hiding behind a
+    convenient parameter choice. The default sits at the memory end of the
+    trade-off.
+    """
+    state = np.asarray(state, dtype=float)
+    x = state[..., 0]
+    y = state[..., 1]
+    z = state[..., 2]
+    slow = state[..., 3]
+    return np.stack(
+        [
+            sigma * (y - x),
+            x * (rho + feedback * slow - z) - y,
+            x * y - beta * z,
+            (-slow + forcing_strength * (z - reference_z)) / ocean_time,
+        ],
+        axis=-1,
     )
 
 

@@ -124,7 +124,18 @@ def _provided_names(tree: ast.Module) -> set[str]:
 
 
 def unresolved_names(source: str) -> dict[str, list[str]]:
-    """Cells that use a name nothing provides, as ``{cell: [names]}``."""
+    """Cells that ask for a name nothing provides, as ``{cell: [names]}``.
+
+    Two ways to ask, and both must be checked.
+
+    A cell can **use** a free name, which is the bare-`nan` case. It can also
+    **declare a parameter** that no cell returns -- and that one slipped past an
+    earlier version of this check, because a parameter counts as bound inside
+    the cell and the body therefore looked clean. Marimo supplies a cell's
+    parameters from other cells' return values, so a parameter nothing returns
+    is a `NameError` at execution exactly like a free name. Chapter 24 shipped
+    that bug to the exporter, which reported it only on stderr.
+    """
     tree = ast.parse(source)
     provided = _provided_names(tree)
     problems: dict[str, list[str]] = {}
@@ -137,8 +148,12 @@ def unresolved_names(source: str) -> dict[str, list[str]]:
             if isinstance(n, ast.Name) and isinstance(n.ctx, ast.Load)
         }
         free = used - _bound_names(node) - BUILTIN_NAMES - provided
-        if free:
-            problems[node.name] = sorted(free)
+        parameters = {a.arg for a in node.args.args}
+        parameters |= {a.arg for a in getattr(node.args, "posonlyargs", [])}
+        parameters |= {a.arg for a in node.args.kwonlyargs}
+        undeclared = parameters - provided
+        if free or undeclared:
+            problems[node.name] = sorted(free | undeclared)
     return problems
 
 
@@ -185,6 +200,30 @@ def test_the_check_itself_detects_a_bare_nan(assignment, expected):
     )
     problems = unresolved_names(source)
     assert problems == ({"data": expected} if expected else {})
+
+
+def test_the_check_detects_a_parameter_nothing_provides():
+    """The chapter-24 failure.
+
+    `REFERENCE_Z` was declared as a cell parameter and used in the cell body,
+    but no cell returned it -- the generator had simply never emitted it. Inside
+    the cell it looked perfectly bound, so a check that only inspects the body
+    sees nothing wrong. Marimo raises `NameError`, the exporter exits 0, and the
+    only sign is one line on stderr.
+    """
+    source = (
+        "import marimo\n"
+        "app = marimo.App()\n"
+        "@app.cell\n"
+        "def data():\n"
+        "    PROVIDED = 1.0\n"
+        "    return (PROVIDED,)\n"
+        "@app.cell\n"
+        "def figure(PROVIDED, NEVER_EMITTED):\n"
+        "    print(PROVIDED, NEVER_EMITTED)\n"
+        "    return\n"
+    )
+    assert unresolved_names(source) == {"figure": ["NEVER_EMITTED"]}
 
 
 def test_the_check_detects_a_misspelled_cross_cell_name():
