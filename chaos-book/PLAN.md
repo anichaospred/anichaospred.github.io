@@ -333,9 +333,22 @@ start and no link is dead.
     separation is a property of the timescale gap, not of the mathematics. Zero-amplitude
     control: boundary information collapses to 0.0015 nats, a factor of 80.
     *Knob:* forcing period and amplitude.
-24. **The ocean's role: interannual-to-decadal prediction** — Initialised prediction;
-    ocean heat content as the memory; drift, bias and the need for
-    re-forecasts.
+24. ★ **The ocean's role: interannual-to-decadal prediction** — A fast L63
+    "atmosphere" coupled to a slow "ocean" that integrates it (Hasselmann's mechanism):
+    the atmosphere forgets in 0.14 TU, the ocean in 17.9. **A constraint that is
+    measured, not chosen**: loop gain and feedback amplitude both scale as
+    $\lambda\kappa$, so any coupling strong enough to move the atmosphere has already
+    destroyed the ocean's memory — and a *positive* $\kappa$ collapses the system
+    entirely (asserted as a test). Initialising the ocean buys **8 TU** for the ocean and
+    almost nothing for the weather — 0.22 sd at lead 2, real at 18 standard errors, gone
+    by lead 4. **Drift is not bias**: a parameter error under half a per cent displaces
+    the model's climatology by ~1 sd and the mean error grows to −1.79 (correlation with
+    lead −0.97) — while the *perfect-model control* also wanders to 0.59, so what
+    distinguishes drift is being 7× larger and far more trended, not the control being
+    zero. Correcting it is worth 9 % with enough re-forecasts and is **worse than
+    nothing** with 5 or 10, first paying at about 20 — the archive is a component of the
+    forecast. Cross-validation matters: in-sample is 2.2 % optimistic here and far more
+    where re-forecasts are scarce. *Knob:* initialisation lead. †
 25. **Climate prediction and projection** — Why the attractor's *statistics* are
     predictable when its trajectory is not; forced response vs. internal variability;
     the initialised/uninitialised distinction.
@@ -426,23 +439,22 @@ Pyodide build every reader's browser receives.
 
 | | Count |
 |---|---|
-| Chapters live | **21** (1, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23) |
-| Chapters stubbed | 10 |
+| Chapters live | **22** (1, 4–24) |
+| Chapters stubbed | 9 |
 | `chaoslib` modules | 10 |
-| `chaoslib` tests | 269, all passing |
+| `chaoslib` tests | 275, all passing |
 
 **Next chapters, in priority order** — each already has most of its material in hand:
 
-1. **Ch. 24** (the ocean and decadal prediction) — the natural next step: replace
-   chapter 23's *prescribed* forcing with a genuinely coupled slow component the fast
-   system acts back on, and ask what initialising a slow component means. Drift and
-   bias correction are measurable in a two-timescale system.
-2. **Ch. 25** (climate prediction and projection) — the forcing as a one-way ramp
-   rather than a cycle; forced response against internal variability, and time of
-   emergence, which is a standard and very computable quantity.
-3. **Ch. 27** (regimes and tipping points) — a double-well with noise; variance and
+1. **Ch. 25** (climate prediction and projection) — the forcing as a one-way ramp
+   rather than a cycle or an internal mode; forced response against internal
+   variability, and time of emergence. Highly computable and the natural close of the
+   S2S-to-climate arc chapters 23 and 24 have been building.
+2. **Ch. 27** (regimes and tipping points) — a double-well with noise; variance and
    autocorrelation as early-warning signals, and their failure modes. Largely
    self-contained.
+3. **Ch. 26** (Earth system prediction) — the hardest of Part VI to do honestly at low
+   order; consider what it can measure before committing to it.
 4. **Ch. 2 and 3** (Part I) — ch. 2 needs a shallow-water balance system in `chaoslib`;
    ch. 3 is mostly synthesis across systems already present.
 5. **Ch. 20's diet** — unblocked since chapter 19; see the note below.

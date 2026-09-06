@@ -4208,3 +4208,97 @@ def test_slow_forcing_makes_the_climatology_depend_on_phase():
     assert min(conditional) > 0.01
     # And it varies with phase -- which is what "windows of opportunity" means.
     assert max(conditional) > 2.0 * min(conditional)
+
+
+# ==========================================================================
+# chapter 24: a fast atmosphere coupled to a slow ocean
+# ==========================================================================
+def test_coupled_system_reduces_to_lorenz63_bitwise():
+    r"""With no forcing of the ocean and $S(0)=0$, the fast part must be
+    Lorenz 63 *exactly*.
+
+    Bitwise, not approximately -- and getting there required grouping the $y$
+    equation as $x(\rho + \kappa S - z) - y$ to match how `lorenz63` groups it.
+    The algebraically identical $x\rho - y - xz$ rounds differently, and the two
+    trajectories then separate by $10^{-14}$ at once and $6\times10^{-6}$ by
+    $t = 20$, growing at very nearly $\lambda_1$. A control that drifts from the
+    thing it is controlling against is not a control.
+    """
+    grid = integrate.trajectory_grid(40.0, 0.01)
+    coupled = integrate.rk4(
+        systems.coupled_ocean_atmosphere, np.array([1.0, 1.0, 20.0, 0.0]),
+        grid, forcing_strength=0.0,
+    )
+    plain = integrate.rk4(
+        systems.lorenz63, np.array([1.0, 1.0, 20.0]), grid
+    )
+    assert np.array_equal(coupled[:, :3], plain)
+    assert np.array_equal(coupled[:, 3], np.zeros(grid.size))
+
+
+def test_unforced_ocean_relaxes_exponentially():
+    r"""$\dot S = -S/T$ when the atmosphere does not drive it, so
+    $S(t) = S(0)e^{-t/T}$ -- an analytic solution to check the integration
+    against."""
+    grid = integrate.trajectory_grid(150.0, 0.01)
+    for ocean_time in (20.0, 50.0):
+        run = integrate.rk4(
+            systems.coupled_ocean_atmosphere, np.array([1.0, 1.0, 20.0, 1.0]),
+            grid, forcing_strength=0.0, ocean_time=ocean_time,
+        )
+        assert np.allclose(run[:, 3], np.exp(-grid / ocean_time), atol=1e-12)
+
+
+def test_the_ocean_carries_far_longer_memory_than_the_atmosphere():
+    r"""Chapter 24's premise: a first-order relaxation driven by fast weather
+    has an autocorrelation time of order $T$, however short the driving is.
+
+    This is Hasselmann's mechanism *[citation needed]* -- the memory comes from
+    integrating the weather, not from slow internal dynamics.
+    """
+    dt = 0.01
+    grid = integrate.trajectory_grid(2500.0, dt)
+    run = integrate.rk4(
+        systems.coupled_ocean_atmosphere, np.array([1.0, 1.0, 20.0, 0.0]),
+        grid,
+    )[20000:]
+
+    def e_folding_time(series, max_lag=600.0):
+        centred = series - series.mean()
+        n_lags = int(max_lag / dt)
+        spectrum = np.fft.rfft(centred, 2 * centred.size)
+        auto = np.fft.irfft(spectrum * np.conj(spectrum))[:n_lags].real
+        auto = auto / auto[0]
+        below = np.nonzero(auto < np.exp(-1.0))[0]
+        return (np.arange(n_lags) * dt)[below[0]] if below.size else np.inf
+
+    fast = e_folding_time(run[:, 2])
+    slow = e_folding_time(run[:, 3])
+    assert fast < 1.0
+    assert slow > 10.0
+    assert slow / fast > 50.0
+
+
+def test_positive_feedback_collapses_the_system():
+    r"""The sign of the coupling is not a free choice.
+
+    Low $z$ drives $S$ down, which lowers the effective Rayleigh number, which
+    lowers $z$ further. With $\kappa > 0$ that loop runs away and the system
+    falls onto the origin -- which is why the default is negative, and why this
+    is asserted rather than left as a footnote.
+    """
+    grid = integrate.trajectory_grid(600.0, 0.01)
+    runaway = integrate.rk4(
+        systems.coupled_ocean_atmosphere, np.array([1.0, 1.0, 20.0, 0.0]),
+        grid, feedback=1.0, forcing_strength=30.0,
+    )
+    tail = runaway[-20000:]
+    assert np.all(np.isfinite(tail))
+    assert tail[:, 2].std() < 1e-6          # convection has stopped
+    assert tail[:, 3].mean() < -100.0       # and the ocean has run away
+
+    stable = integrate.rk4(
+        systems.coupled_ocean_atmosphere, np.array([1.0, 1.0, 20.0, 0.0]),
+        grid,
+    )
+    assert stable[-20000:, 2].std() > 5.0
