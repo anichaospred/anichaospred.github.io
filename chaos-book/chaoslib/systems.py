@@ -25,6 +25,8 @@ __all__ = [
     "lorenz63",
     "coupled_ocean_atmosphere",
     "lorenz63_forced",
+    "lorenz63_ramped",
+    "lorenz63_ramp",
     "lorenz63_forcing",
     "lorenz63_jacobian",
     "lorenz63_fixed_points",
@@ -225,6 +227,50 @@ def coupled_ocean_atmosphere(
         ],
         axis=-1,
     )
+
+
+def lorenz63_ramped(
+    t: float,
+    x: Array,
+    sigma: float = 10.0,
+    rho_start: float = 28.0,
+    rho_rate: float = 0.05,
+    beta: float = 8.0 / 3.0,
+) -> Array:
+    r"""Lorenz 63 with a one-way ramp in the Rayleigh number.
+
+    .. math::
+        \rho(t) = \rho_0 + r\,t
+
+    Chapter 23's forcing went round a loop and chapter 24's was generated
+    internally; this one only goes up. That is the shape of an emissions
+    scenario, and it changes the question being asked: not "where on the
+    attractor will the system be" but "what attractor will it be on".
+
+    With ``rho_rate = 0`` this is :func:`lorenz63` **bitwise** -- the :math:`y`
+    equation is grouped as :math:`x(\rho(t) - z) - y` to match, since the
+    algebraically identical :math:`x\rho - y - xz` rounds differently and a
+    chaotic system amplifies the difference at :math:`\lambda_1`.
+
+    A caution the chapter states rather than assumes: Lorenz 63 has no
+    thermodynamics and :math:`\rho` is not a greenhouse gas. What transfers is
+    the *structure* of a forced-response problem -- a distribution moving under
+    a trend, against internal variability that does not shrink -- and not any
+    quantitative statement about the atmosphere.
+    """
+    x = np.asarray(x, dtype=float)
+    rho = rho_start + rho_rate * t
+    X, Y, Z = x[..., 0], x[..., 1], x[..., 2]
+    return np.stack(
+        [sigma * (Y - X), X * (rho - Z) - Y, X * Y - beta * Z], axis=-1
+    )
+
+
+def lorenz63_ramp(
+    t: Array, rho_start: float = 28.0, rho_rate: float = 0.05
+) -> Array:
+    """The :math:`\\rho(t)` that :func:`lorenz63_ramped` uses, for plotting."""
+    return rho_start + rho_rate * np.asarray(t, dtype=float)
 
 
 def lorenz63_jacobian(

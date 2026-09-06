@@ -4302,3 +4302,99 @@ def test_positive_feedback_collapses_the_system():
         grid,
     )
     assert stable[-20000:, 2].std() > 5.0
+
+
+# ==========================================================================
+# chapter 25: a one-way ramp in the forcing
+# ==========================================================================
+def test_ramped_lorenz63_is_bitwise_lorenz63_at_zero_rate():
+    """A forced-response experiment compares a ramped run against a control.
+    If the control is not the same system, the comparison measures the
+    difference between two integrators as well as the forcing."""
+    grid = integrate.trajectory_grid(40.0, 0.01)
+    ramped = integrate.rk4(
+        systems.lorenz63_ramped, np.array([1.0, 1.0, 20.0]), grid, rho_rate=0.0
+    )
+    plain = integrate.rk4(systems.lorenz63, np.array([1.0, 1.0, 20.0]), grid)
+    assert np.array_equal(ramped, plain)
+
+
+def test_ramp_helper_matches_the_forcing_the_system_uses():
+    rng = np.random.default_rng(0)
+    state = rng.normal(0.0, 5.0, 3)
+    for t in (0.0, 25.0, 100.0):
+        rho = float(systems.lorenz63_ramp(t, rho_start=28.0, rho_rate=0.05))
+        assert np.allclose(
+            systems.lorenz63_ramped(
+                t, state, rho_start=28.0, rho_rate=0.05
+            ),
+            systems.lorenz63(t, state, rho=rho),
+        )
+    assert systems.lorenz63_ramp(
+        np.array([0.0, 100.0, 200.0]), 28.0, 0.05
+    ) == pytest.approx([28.0, 33.0, 38.0])
+
+
+def test_internal_variability_does_not_shrink_under_a_ramp():
+    r"""Chapter 25's central measurement, in miniature.
+
+    The forced response grows without bound while the spread about it does not
+    change -- which is why a projection can be confident about the *mean* and
+    say nothing about any particular year. If internal variability shrank, the
+    time-of-emergence calculation would be a different and much easier problem.
+    """
+    dt, members, horizon = 0.01, 120, 200.0
+    spun = integrate.rk4(
+        systems.lorenz63, np.array([1.0, 1.0, 20.0]),
+        integrate.trajectory_grid(2000.0, dt),
+    )[20000:]
+    starts = spun[:: spun.shape[0] // members][:members]
+    grid = integrate.trajectory_grid(horizon, dt)
+
+    control = integrate.rk4(
+        systems.lorenz63_ramped, starts, grid, rho_rate=0.0
+    )[:, :, 2]
+    ramped = integrate.rk4(
+        systems.lorenz63_ramped, starts, grid, rho_rate=0.05
+    )[:, :, 2]
+
+    signal = ramped.mean(axis=1) - control.mean(axis=1)
+    spread = control.std(axis=1)
+    early = slice(0, 2000)
+    late = slice(control.shape[0] - 2000, control.shape[0])
+
+    # The response grows...
+    assert signal[late].mean() > 5.0
+    assert signal[late].mean() > 5.0 * abs(signal[early].mean())
+    # ...and the internal variability does not.
+    assert spread[late].mean() == pytest.approx(spread[early].mean(), rel=0.10)
+
+
+def test_the_forced_response_does_not_depend_on_where_the_ensemble_started():
+    r"""The contrast with chapter 24, which found initialisation worth eight
+    time units for a slow variable. For the *forced response* it is worth
+    nothing, and that is the whole difference between a projection and a
+    prediction."""
+    dt, members, horizon = 0.01, 100, 150.0
+    spun = integrate.rk4(
+        systems.lorenz63, np.array([1.0, 1.0, 20.0]),
+        integrate.trajectory_grid(3000.0, dt),
+    )[20000:]
+    first = spun[: spun.shape[0] // 2][:: (spun.shape[0] // 2) // members][:members]
+    second = spun[spun.shape[0] // 2:][:: (spun.shape[0] // 2) // members][:members]
+    grid = integrate.trajectory_grid(horizon, dt)
+
+    responses = []
+    for starts in (first, second):
+        control = integrate.rk4(
+            systems.lorenz63_ramped, starts, grid, rho_rate=0.0
+        )[:, :, 2]
+        ramped = integrate.rk4(
+            systems.lorenz63_ramped, starts, grid, rho_rate=0.05
+        )[:, :, 2]
+        responses.append(ramped.mean(axis=1) - control.mean(axis=1))
+
+    tail = slice(responses[0].size - 2000, responses[0].size)
+    internal = float(np.std(spun[:, 2]))
+    difference = abs(responses[0][tail].mean() - responses[1][tail].mean())
+    assert difference < 0.25 * internal
