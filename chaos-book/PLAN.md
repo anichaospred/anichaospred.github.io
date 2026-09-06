@@ -315,10 +315,24 @@ start and no link is dead.
 
 ### Part VI — Predictability of the second kind: from S2S to climate
 
-23. **Boundary-forced predictability and the S2S window** — ENSO, the MJO, sudden
-    stratospheric warmings, monsoon onset; the "predictability desert" and why it is
-    not empty. *Notebook:* L63 with a slowly varying $\rho$ — predictable statistics
-    over an unpredictable trajectory. *Knob:* forcing period and amplitude.
+23. ★ **Boundary-forced predictability and the S2S window** — L63 with
+    $\rho(t) = 28 + 6\sin(2\pi t/40)$, and the whole argument in one decomposition:
+    score each forecast against the **pooled** climatology and against the one
+    **conditioned on forcing phase**. Information decays to a **floor** (0.146 nats),
+    not to zero, and the phase alone is worth 0.120 — so at long lead the forecast has
+    become a statement about the forcing. The two add: floor + residual = 0.147 against
+    a measured 0.146, a *check* rather than an identity since relative entropy is not
+    additive. The forcing overtakes the initial state at lead 17, and the
+    "predictability desert" between lead 10 and 17 is **thin, not empty** — it has that
+    floor under it. **Windows of opportunity are real**: horizons of 9 to 17 TU by
+    launch phase, with a split-half correlation of **+0.96** to show it is structure
+    rather than noise. Amplitude is what the forcing is worth (0.0015 → 0.252 nats);
+    period is not (10 % across an eightfold range). And one result came out backwards
+    and is kept: at period 2.5 the phase information *rises*, because the decomposition
+    breaks down when the forcing is not slow compared with the dynamics — the clean
+    separation is a property of the timescale gap, not of the mathematics. Zero-amplitude
+    control: boundary information collapses to 0.0015 nats, a factor of 80.
+    *Knob:* forcing period and amplitude.
 24. **The ocean's role: interannual-to-decadal prediction** — Initialised prediction;
     ocean heat content as the memory; drift, bias and the need for
     re-forecasts.
@@ -412,23 +426,26 @@ Pyodide build every reader's browser receives.
 
 | | Count |
 |---|---|
-| Chapters live | **20** (1, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22) |
-| Chapters stubbed | 11 |
+| Chapters live | **21** (1, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23) |
+| Chapters stubbed | 10 |
 | `chaoslib` modules | 10 |
-| `chaoslib` tests | 265, all passing |
+| `chaoslib` tests | 269, all passing |
 
 **Next chapters, in priority order** — each already has most of its material in hand:
 
-1. **Ch. 2** (history of NWP) — Part I, and the only one of the three whose notebook is
-   genuinely new numerics: a shallow-water column initialised out of balance, so
-   Richardson's failure is reproduced rather than described. Needs a balance/gravity-wave
-   system in `chaoslib`.
-2. **Ch. 3** (the hierarchy of models) — the book's organising chapter, and now mostly a
-   *synthesis*: one predictability diagnostic across the logistic map, L63, L96 and 2-D
-   turbulence, all of which `chaoslib` already has.
-3. **Part VI** (chapters 23–27, predictability of the second kind) — the largest
-   remaining block. Chapter 1 now ends by pointing at it with a measured number.
-4. **Ch. 20's diet** — unblocked since chapter 19; see the note below.
+1. **Ch. 24** (the ocean and decadal prediction) — the natural next step: replace
+   chapter 23's *prescribed* forcing with a genuinely coupled slow component the fast
+   system acts back on, and ask what initialising a slow component means. Drift and
+   bias correction are measurable in a two-timescale system.
+2. **Ch. 25** (climate prediction and projection) — the forcing as a one-way ramp
+   rather than a cycle; forced response against internal variability, and time of
+   emergence, which is a standard and very computable quantity.
+3. **Ch. 27** (regimes and tipping points) — a double-well with noise; variance and
+   autocorrelation as early-warning signals, and their failure modes. Largely
+   self-contained.
+4. **Ch. 2 and 3** (Part I) — ch. 2 needs a shallow-water balance system in `chaoslib`;
+   ch. 3 is mostly synthesis across systems already present.
+5. **Ch. 20's diet** — unblocked since chapter 19; see the note below.
 
 ### A second decision on record: splitting chapter 20
 

@@ -4123,3 +4123,88 @@ def test_second_kind_information_survives_where_first_kind_does_not():
     assert second_kind > 0.05             # the forcing signal is real
     assert early > 5.0 * second_kind      # and small next to a fresh forecast
     assert late < second_kind             # which has since lost to it
+
+
+# ==========================================================================
+# chapter 23: a slowly forced system
+# ==========================================================================
+def test_forced_lorenz63_reduces_to_lorenz63_at_zero_amplitude():
+    """Exactly, not approximately -- the forced system must be the same system
+    when the forcing is switched off, or every comparison against an unforced
+    control is measuring the wrong thing."""
+    rng = np.random.default_rng(0)
+    for _ in range(5):
+        state = rng.normal(0.0, 10.0, 3)
+        time = float(rng.uniform(0.0, 100.0))
+        assert np.array_equal(
+            systems.lorenz63_forced(time, state, rho_amplitude=0.0, rho_mean=28.0),
+            systems.lorenz63(time, state, rho=28.0),
+        )
+
+
+def test_forcing_helper_matches_the_forcing_the_system_actually_uses():
+    r"""A figure and an integration must not be able to disagree about
+    $\rho(t)$, which is why the sine is written once."""
+    rng = np.random.default_rng(1)
+    state = rng.normal(0.0, 5.0, 3)
+    for time in (0.0, 7.5, 19.0, 33.3):
+        rho = float(systems.lorenz63_forcing(
+            time, rho_mean=28.0, rho_amplitude=6.0, period=40.0
+        ))
+        assert np.allclose(
+            systems.lorenz63_forced(
+                time, state, rho_mean=28.0, rho_amplitude=6.0, period=40.0
+            ),
+            systems.lorenz63(time, state, rho=rho),
+        )
+    # Quarter, half and three-quarter phase land on the extremes and the mean.
+    assert systems.lorenz63_forcing(
+        np.array([0.0, 10.0, 20.0, 30.0]), 28.0, 6.0, 40.0
+    ) == pytest.approx([28.0, 34.0, 28.0, 22.0])
+
+
+def test_slow_forcing_makes_the_climatology_depend_on_phase():
+    r"""Chapter 23's premise, tested.
+
+    If the phase-conditioned climatology were the same as the unconditional
+    one, there would be no boundary-forced predictability to measure and the
+    chapter would have no subject. With a forcing period an order of magnitude
+    longer than the trajectory's own predictability time, the conditional means
+    separate by several units of $z$.
+    """
+    dt, period = 0.01, 40.0
+    grid = integrate.trajectory_grid(1200.0, dt)
+    trajectory = integrate.rk4(
+        systems.lorenz63_forced, np.array([1.0, 1.0, 20.0]), grid,
+        rho_mean=28.0, rho_amplitude=6.0, period=period,
+    )[4000:]
+    times = grid[4000:]
+    phase = (times % period) / period
+    bins = np.linspace(-5.0, 70.0, 41)
+
+    means = [
+        trajectory[(phase >= lo) & (phase < lo + 0.25), 2].mean()
+        for lo in (0.0, 0.25, 0.5, 0.75)
+    ]
+    assert max(means) - min(means) > 5.0
+
+    unconditional = information.binned_relative_entropy(
+        trajectory[:, 2], trajectory[:, 2], bins
+    )
+    assert unconditional < 1e-9        # a sample against itself
+    # EIGHT phase bins, which is what chapter 23 uses. Four quarter-period bins
+    # average over so much of the cycle that the variation between them falls
+    # to 1.3x -- the signal is real either way, but a diagnostic that smooths
+    # away the thing it is meant to detect is not much of a diagnostic.
+    n_phase = 8
+    edges = np.linspace(0.0, 1.0, n_phase + 1)
+    conditional = [
+        information.binned_relative_entropy(
+            trajectory[(phase >= edges[i]) & (phase < edges[i + 1]), 2],
+            trajectory[:, 2], bins,
+        )
+        for i in range(n_phase)
+    ]
+    assert min(conditional) > 0.01
+    # And it varies with phase -- which is what "windows of opportunity" means.
+    assert max(conditional) > 2.0 * min(conditional)
