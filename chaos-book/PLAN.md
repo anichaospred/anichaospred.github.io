@@ -349,9 +349,20 @@ start and no link is dead.
     nothing** with 5 or 10, first paying at about 20 — the archive is a component of the
     forecast. Cross-validation matters: in-sample is 2.2 % optimistic here and far more
     where re-forecasts are scarce. *Knob:* initialisation lead. †
-25. **Climate prediction and projection** — Why the attractor's *statistics* are
-    predictable when its trajectory is not; forced response vs. internal variability;
-    the initialised/uninitialised distinction.
+25. ★ **Climate prediction and projection** — Lorenz 63 with a ramping Rayleigh
+    number, $\rho(t) = \rho_0 + \gamma t$; the zero-rate limit is asserted as a
+    **bitwise** identity with the unforced system. One forecast, two questions: an
+    individual member saturates at **1.48** climatological spreads while the ensemble's
+    windowed mean tracks the truth's to **2.8 %** of one. **Internal variability does
+    not shrink under forcing** — it stays within 0.8 % (8.574–8.639) while the response
+    grows 0.48 → 15.4, so S/N rises because the signal outgrows a fixed noise. **Two
+    times of emergence differing by $\sqrt K$**: a single realisation never reaches
+    S/N > 2 in 320 TU, an ensemble of 400 does at $t = 18$. Both scalings hold as laws,
+    not fits — $\mathrm{ToE}\times\gamma$ constant to 3 %, $\mathrm{ToE}\times\sqrt K$
+    constant from $K = 10$ and breaking below it where the noise estimate is itself made
+    from a handful of members. **Initialisation is worth nothing** — two ensembles from
+    disjoint start sets differ by 1 % of internal variability — the sharp contrast with
+    chapter 24's 8 TU. *Knob:* forcing rate, ensemble size.
 26. **Earth system prediction** — Coupled, carbon-cycle and cryosphere components;
     what "initialising" a slow component means; frontiers.
 27. **Regimes, bistability, and tipping points** — Multiple attractors; noise-induced
@@ -439,25 +450,21 @@ Pyodide build every reader's browser receives.
 
 | | Count |
 |---|---|
-| Chapters live | **22** (1, 4–24) |
-| Chapters stubbed | 9 |
-| `chaoslib` modules | 10 |
-| `chaoslib` tests | 275, all passing |
+| Chapters live | **23** (1, 4–25) |
+| Chapters stubbed | 8 |
+| `chaoslib` modules | 14 |
+| `chaoslib` tests | 280, all passing |
 
 **Next chapters, in priority order** — each already has most of its material in hand:
 
-1. **Ch. 25** (climate prediction and projection) — the forcing as a one-way ramp
-   rather than a cycle or an internal mode; forced response against internal
-   variability, and time of emergence. Highly computable and the natural close of the
-   S2S-to-climate arc chapters 23 and 24 have been building.
-2. **Ch. 27** (regimes and tipping points) — a double-well with noise; variance and
+1. **Ch. 27** (regimes and tipping points) — a double-well with noise; variance and
    autocorrelation as early-warning signals, and their failure modes. Largely
    self-contained.
-3. **Ch. 26** (Earth system prediction) — the hardest of Part VI to do honestly at low
+2. **Ch. 26** (Earth system prediction) — the hardest of Part VI to do honestly at low
    order; consider what it can measure before committing to it.
-4. **Ch. 2 and 3** (Part I) — ch. 2 needs a shallow-water balance system in `chaoslib`;
+3. **Ch. 2 and 3** (Part I) — ch. 2 needs a shallow-water balance system in `chaoslib`;
    ch. 3 is mostly synthesis across systems already present.
-5. **Ch. 20's diet** — unblocked since chapter 19; see the note below.
+4. **Ch. 20's diet** — unblocked since chapter 19; see the note below.
 
 ### A second decision on record: splitting chapter 20
 
