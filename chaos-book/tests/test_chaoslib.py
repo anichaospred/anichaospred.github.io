@@ -4028,3 +4028,98 @@ def test_anomaly_correlation_ignores_a_uniform_amplitude_error():
     assert float(np.mean((3.0 * forecast - truth) ** 2)) > 3.0 * float(
         np.mean((forecast - truth) ** 2)
     )
+
+
+# ==========================================================================
+# chapter 1: information beyond climatology
+# ==========================================================================
+def test_binned_relative_entropy_is_zero_for_the_same_distribution():
+    """Up to the estimator's own upward bias, which is measured rather than
+    assumed."""
+    rng = np.random.default_rng(0)
+    bins = np.linspace(-5.0, 5.0, 41)
+    reference = rng.normal(size=200000)
+    sample = rng.normal(size=200000)
+    value = information.binned_relative_entropy(sample, reference, bins)
+    assert value >= 0.0
+    # 40 bins, 200k members: the (B-1)/2N floor is about 1e-4.
+    assert value < 0.01
+
+
+def test_binned_relative_entropy_recovers_the_analytic_gaussian_value():
+    r"""Two Gaussians differing in mean have
+    $D = (\mu_p-\mu_q)^2/2\sigma^2$; fine bins and large samples should find it."""
+    rng = np.random.default_rng(1)
+    bins = np.linspace(-8.0, 12.0, 201)
+    reference = rng.normal(0.0, 1.0, 400000)
+    for shift in (0.5, 1.0, 1.5):
+        sample = rng.normal(shift, 1.0, 400000)
+        expected = shift**2 / 2.0
+        assert information.binned_relative_entropy(
+            sample, reference, bins
+        ) == pytest.approx(expected, rel=0.05)
+
+
+def test_binned_relative_entropy_stays_finite_where_a_raw_histogram_would_not():
+    """The reason for the smoothing, stated as a test.
+
+    A tight forecast landing where a finite climatology sample has no members
+    makes the unsmoothed divergence infinite -- and that is the normal case for
+    a short-lead ensemble, not a corner case.
+    """
+    rng = np.random.default_rng(2)
+    bins = np.linspace(-5.0, 5.0, 41)
+    reference = rng.normal(0.0, 0.3, 5000)          # narrow support
+    sample = rng.normal(3.5, 0.05, 5000)            # far outside it
+    value = information.binned_relative_entropy(sample, reference, bins)
+    assert np.isfinite(value)
+    assert value > 1.0
+
+    # Unsmoothed, the same comparison raises rather than returning inf.
+    raw_p = np.histogram(sample, bins=bins)[0].astype(float)
+    raw_q = np.histogram(reference, bins=bins)[0].astype(float)
+    with pytest.raises(ValueError, match="infinite"):
+        information.relative_entropy(raw_p / raw_p.sum(), raw_q / raw_q.sum())
+
+    with pytest.raises(ValueError, match="smoothing"):
+        information.binned_relative_entropy(sample, reference, bins, smoothing=0.0)
+
+
+def test_second_kind_information_survives_where_first_kind_does_not():
+    r"""Chapter 1's central measurement, in miniature.
+
+    Changing Lorenz 63's $\rho$ -- its Rayleigh number, the analogue of a
+    boundary forcing -- shifts the attractor's statistics permanently. An
+    ensemble started from a tight blob at fixed $\rho$ loses its information
+    about the future entirely. So the two kinds of predictability, measured in
+    the same units on the same system, behave completely differently: one decays
+    to the noise floor, the other does not decay at all.
+    """
+    dt = 0.01
+    bins = np.linspace(-5.0, 65.0, 41)
+
+    def climatology(rho):
+        start = np.array([1.0, 1.0, 20.0])
+        return integrate.rk4(
+            systems.lorenz63, start,
+            integrate.trajectory_grid(300.0, dt), rho=rho,
+        )[4000:, 2]
+
+    warm, base = climatology(32.0), climatology(28.0)
+    second_kind = information.binned_relative_entropy(warm, base, bins)
+
+    rng = np.random.default_rng(3)
+    reference = integrate.rk4(
+        systems.lorenz63, np.array([1.0, 1.0, 20.0]),
+        integrate.trajectory_grid(300.0, dt), rho=28.0,
+    )[4000:]
+    members = reference[5000] + rng.normal(0.0, 0.05, (3000, 3))
+    grid = np.linspace(0.0, 20.0, int(round(20.0 / dt)) + 1)
+    evolved = integrate.rk4(systems.lorenz63, members, grid, rho=28.0)
+
+    early = information.binned_relative_entropy(evolved[0][:, 2], base, bins)
+    late = information.binned_relative_entropy(evolved[-1][:, 2], base, bins)
+
+    assert second_kind > 0.05             # the forcing signal is real
+    assert early > 5.0 * second_kind      # and small next to a fresh forecast
+    assert late < second_kind             # which has since lost to it
