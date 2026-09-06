@@ -172,6 +172,22 @@ against it.
 $\min(|i-j|, N-|i-j|)$. Building it from $|i-j|$ instead gives a non-circulant matrix,
 which quietly makes two arbitrary sites of a homogeneous system special.
 
+### The forced Lorenz 63
+
+`systems.lorenz63_forced` substitutes $\rho(t) = \bar\rho + A\sin(2\pi t/T)$ into
+`lorenz63`, and `systems.lorenz63_forcing` returns that $\rho(t)$ so a figure and an
+integration cannot disagree about it — writing the sine twice is the kind of duplication
+that survives right up until somebody changes one copy. With `rho_amplitude = 0` it
+reduces to `lorenz63` **exactly**, which is asserted rather than assumed, because every
+comparison against an unforced control depends on it.
+
+The forcing is *prescribed*, not coupled: the fast system does not act back on $\rho$.
+That is a real limitation and the reason chapter 23 says what it says about the ocean
+rather than showing it. Chapter 23 also measures where the construction stops meaning
+what it says — at a forcing period shorter than the trajectory's own predictability time,
+conditioning on "the phase" is partly conditioning on the state, and the separation into
+boundary-forced and initial-condition information breaks down.
+
 ## `verification` — deterministic scores, and an imperfect truth
 
 `anomaly_correlation`, `mse_decomposition`, `mse_skill_score`, `skill_horizon`,

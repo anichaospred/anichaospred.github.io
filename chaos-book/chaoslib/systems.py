@@ -23,6 +23,8 @@ Array = NDArray[np.floating]
 
 __all__ = [
     "lorenz63",
+    "lorenz63_forced",
+    "lorenz63_forcing",
     "lorenz63_jacobian",
     "lorenz63_fixed_points",
     "lorenz63_hopf_rho",
@@ -79,6 +81,56 @@ def lorenz63(
     X, Y, Z = x[..., 0], x[..., 1], x[..., 2]
     return np.stack(
         [sigma * (Y - X), X * (rho - Z) - Y, X * Y - beta * Z], axis=-1
+    )
+
+
+def lorenz63_forced(
+    t: float,
+    x: Array,
+    sigma: float = 10.0,
+    rho_mean: float = 28.0,
+    rho_amplitude: float = 6.0,
+    period: float = 40.0,
+    beta: float = 8.0 / 3.0,
+) -> Array:
+    r"""Lorenz 63 with a slowly oscillating Rayleigh number.
+
+    .. math::
+        \rho(t) = \bar\rho + A\sin(2\pi t/T)
+
+    substituted into :func:`lorenz63`. The point of the construction is the
+    **separation of timescales**: with :math:`T` an order of magnitude longer
+    than the trajectory's own predictability time, the forcing is a slow
+    boundary condition rather than part of the fast dynamics, which is the
+    caricature of ENSO, the seasonal cycle, or any other slow driver that
+    chapter 23 needs.
+
+    Note that this is a *prescribed* forcing, not a coupled one: the fast system
+    does not act back on :math:`\rho`. That is a real limitation and the reason
+    the chapter says what it says about the ocean rather than showing it -- a
+    genuine two-way coupled system is chapter 24's subject.
+
+    With ``rho_amplitude = 0`` this reduces to :func:`lorenz63` exactly, which is
+    asserted as a test rather than assumed.
+    """
+    rho = rho_mean + rho_amplitude * np.sin(2.0 * np.pi * t / period)
+    return lorenz63(t, x, sigma=sigma, rho=rho, beta=beta)
+
+
+def lorenz63_forcing(
+    t: Array,
+    rho_mean: float = 28.0,
+    rho_amplitude: float = 6.0,
+    period: float = 40.0,
+) -> Array:
+    """The :math:`\\rho(t)` that :func:`lorenz63_forced` uses, for plotting.
+
+    Separated out so a figure and the integration cannot disagree about the
+    forcing -- writing the sine twice is the kind of duplication that survives
+    right up until somebody changes one of them.
+    """
+    return rho_mean + rho_amplitude * np.sin(
+        2.0 * np.pi * np.asarray(t, dtype=float) / period
     )
 
 
