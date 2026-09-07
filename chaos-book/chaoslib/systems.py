@@ -59,6 +59,12 @@ __all__ = [
     "double_well_restoring_rate",
     "double_well_ramped",
     "double_well_ramp",
+    "earth_system",
+    "earth_system_state",
+    "earth_system_split",
+    "earth_system_emissions",
+    "earth_system_loop_gain",
+    "earth_system_amplification",
 ]
 
 
@@ -885,4 +891,226 @@ def double_well_ramp(
 ) -> Array:
     r"""The :math:`\mu(t)` that :func:`double_well_ramped` uses, for plotting."""
     return mu_start + mu_rate * np.asarray(t, dtype=float)
+
+
+# --------------------------------------------------------------------------
+# Earth system prediction: a reservoir hierarchy whose forcing is a state
+# --------------------------------------------------------------------------
+# Measured once, on the unforced attractor: <z> = 1.0007 rho - 4.4603 over
+# rho in [26, 40], so d<z>/d(rho) is 1 to within 0.07 % and <z> = 23.6 at
+# rho = 28.04. Both numbers are used by earth_system_loop_gain; extrapolating
+# them far beyond that range is what degrades the amplification law at large
+# loop gain (chapter 26, section 3).
+_Z_SLOPE, _Z_INTERCEPT = 1.0007, -4.4603
+
+
+def earth_system(
+    t: float,
+    state: Array,
+    sigma: float = 10.0,
+    rho_ref: float = 28.0,
+    beta: float = 8.0 / 3.0,
+    slow_timescales: Array = (2.0, 8.0, 32.0, 128.0),
+    slow_coupling: float = 1.0,
+    reference_z: float = 23.6,
+    emissions: float = 0.0,
+    emissions_stop: float = float("inf"),
+    sink_time: float = 50.0,
+    sink_sensitivity: float = 0.0,
+    carbon_forcing: float = 0.0,
+) -> Array:
+    r"""A chaotic "weather" system, a hierarchy of slow reservoirs, and a
+    forcing that is itself part of the state.
+
+    .. math::
+        \dot x &= \sigma(y - x) \\
+        \dot y &= x(\rho_{\rm eff} - z) - y \\
+        \dot z &= xy - \beta z \\
+        \dot S_k &= \big[-S_k + \lambda(z - z_{\rm ref})\big] / T_k,
+                    \qquad k = 1 \ldots N \\
+        \dot C &= E(t) - \frac{C}{\tau_0\,(1 + \alpha S_1)} \\
+        \rho_{\rm eff} &= \rho_{\rm ref} + \kappa_C C
+
+    The state is ``[x, y, z, S_1, ..., S_N, C]``; use
+    :func:`earth_system_state` to build one and :func:`earth_system_split` to
+    take it apart. Leading axes are ensemble members.
+
+    **What this adds to chapter 24.** There, one slow variable integrated the
+    weather. Here there are :math:`N` of them with timescales spanning decades,
+    and -- the structural difference from every earlier chapter -- the forcing
+    :math:`\rho_{\rm eff}` is **not prescribed**. It is set by a carbon
+    reservoir that emissions fill and a sink drains, and the sink's efficiency
+    depends on the climate through :math:`S_1`. So predicting the forcing is
+    part of the forecast, and a *carbon-climate feedback* loop closes through
+    the fast system.
+
+    The reservoirs are **passive by default** (``slow_coupling`` drives them but
+    they do not act back on the fast system). That is deliberate: chapter 24
+    measured that in this model family the loop gain and the feedback amplitude
+    both scale as :math:`\lambda\kappa`, so any reservoir coupling strong enough
+    to move the atmosphere has already destroyed the reservoir's memory. Routing
+    the only feedback through carbon avoids that trade-off entirely, because the
+    carbon loop's gain is set by :math:`\alpha` and its amplitude by
+    :math:`\kappa_C`, which are independent parameters.
+
+    Exact limits, asserted as tests rather than assumed:
+
+    * ``carbon_forcing = 0`` leaves the fast subsystem **bitwise** identical to
+      :func:`lorenz63` -- the :math:`y` equation is grouped as
+      :math:`x(\rho_{\rm eff} - z) - y` to match;
+    * ``slow_coupling = 0`` leaves each reservoir decaying as
+      :math:`S_k(0)e^{-t/T_k}`, to :math:`2\times10^{-12}`;
+    * ``emissions = 0`` with ``sink_sensitivity = 0`` leaves
+      :math:`C(t) = C(0)e^{-t/\tau_0}`, to :math:`10^{-14}`.
+
+    Every scalar parameter also accepts an **array** broadcasting against the
+    ensemble axis, so a perturbed-parameter ensemble is one call rather than a
+    Python loop -- which is what makes chapter 26's emergent-constraint
+    experiment affordable.
+
+    ``emissions_stop`` cuts emissions to zero at that time. Note what this model
+    then does, because it is a real limitation: the sink removes **all** the
+    carbon, so :math:`C \to 0` and every reservoir returns to its unforced
+    state. There is no permanent airborne fraction, and therefore no
+    zero-emissions commitment. The chapter says so rather than implying
+    otherwise.
+    """
+    state = np.asarray(state, dtype=float)
+    timescales = np.asarray(slow_timescales, dtype=float)
+    n = timescales.size
+    x = state[..., 0]
+    y = state[..., 1]
+    z = state[..., 2]
+    slow = state[..., 3 : 3 + n]
+    carbon = state[..., 3 + n]
+
+    rho_eff = rho_ref + carbon_forcing * carbon
+    d_slow = (-slow + slow_coupling * (z - reference_z)[..., None]) / timescales
+    rate = emissions if t < emissions_stop else 0.0
+    # Residence time lengthens as the climate warms: the carbon-climate feedback.
+    residence = sink_time * (1.0 + sink_sensitivity * slow[..., 0])
+    d_carbon = rate - carbon / residence
+    return np.concatenate(
+        [
+            np.stack(
+                [sigma * (y - x), x * (rho_eff - z) - y, x * y - beta * z],
+                axis=-1,
+            ),
+            d_slow,
+            d_carbon[..., None],
+        ],
+        axis=-1,
+    )
+
+
+def earth_system_state(
+    fast: Array = (1.0, 1.0, 20.0),
+    slow: Array | None = None,
+    carbon: float = 0.0,
+    n_slow: int = 4,
+) -> Array:
+    """Assemble a state for :func:`earth_system`: ``[x, y, z, S..., C]``.
+
+    ``slow`` defaults to all zeros, which is the unforced reservoir state.
+    """
+    out = np.zeros(3 + int(n_slow) + 1, dtype=float)
+    out[:3] = np.asarray(fast, dtype=float)
+    if slow is not None:
+        out[3 : 3 + int(n_slow)] = np.asarray(slow, dtype=float)
+    out[3 + int(n_slow)] = float(carbon)
+    return out
+
+
+def earth_system_split(
+    state: Array, n_slow: int = 4
+) -> tuple[Array, Array, Array]:
+    """Split an :func:`earth_system` state into ``(fast, reservoirs, carbon)``.
+
+    Works on a single state, an ensemble, or a trajectory with time leading.
+    """
+    arr = np.asarray(state, dtype=float)
+    n = int(n_slow)
+    return arr[..., :3], arr[..., 3 : 3 + n], arr[..., 3 + n]
+
+
+def earth_system_emissions(
+    t: Array, emissions: float = 0.0, emissions_stop: float = float("inf")
+) -> Array:
+    """The :math:`E(t)` that :func:`earth_system` uses, for plotting."""
+    t = np.asarray(t, dtype=float)
+    return np.where(t < emissions_stop, float(emissions), 0.0)
+
+
+def earth_system_loop_gain(
+    emissions: float,
+    sink_time: float = 50.0,
+    sink_sensitivity: float = 0.0,
+    carbon_forcing: float = 0.0,
+    slow_coupling: float = 1.0,
+) -> float:
+    r"""Dimensionless gain of the carbon-climate feedback loop.
+
+    .. math:: g = C_0\,\alpha\,\kappa_C\,\lambda,
+              \qquad C_0 = E\,\tau_0
+
+    the product of going once round the loop: more carbon raises
+    :math:`\rho_{\rm eff}` by :math:`\kappa_C`, which raises :math:`\langle
+    z\rangle` by very nearly the same amount (:math:`d\langle z\rangle/d\rho =
+    1.0007` measured), which raises :math:`S_1` by :math:`\lambda`, which
+    lengthens the residence time by :math:`\alpha`.
+
+    :math:`g < 1` is a finite amplification; :math:`g \ge 1` is not.
+    """
+    return float(
+        emissions * sink_time * sink_sensitivity * carbon_forcing
+        * slow_coupling * _Z_SLOPE
+    )
+
+
+def earth_system_amplification(
+    emissions: float,
+    sink_time: float = 50.0,
+    sink_sensitivity: float = 0.0,
+    carbon_forcing: float = 0.0,
+    slow_coupling: float = 1.0,
+    rho_ref: float = 28.0,
+    reference_z: float = 23.6,
+) -> float:
+    r"""Equilibrium carbon relative to its no-feedback value, :math:`C/C_0`.
+
+    Solving the steady state exactly -- the carbon equation is linear in
+    :math:`C` once :math:`\langle z\rangle` is linearised in
+    :math:`\rho_{\rm eff}` -- gives
+
+    .. math:: \frac{C}{C_0} = \frac{1 + \alpha S_1^{\rm base}}{1 - g},
+
+    with :math:`S_1^{\rm base} = \lambda(\rho_{\rm ref}\,d\langle
+    z\rangle/d\rho + c - z_{\rm ref})` the unforced reservoir anomaly, which is
+    :math:`-0.06` at the default parameters and so nearly negligible. The
+    familiar :math:`1/(1-g)` is therefore the leading behaviour.
+
+    Returns ``inf`` at or beyond :math:`g = 1`. **What happens there is a
+    saturation, not an explosion**, which is worth distinguishing because
+    "runaway" is the usual word: the residence time grows linearly in
+    :math:`C`, so the sink term :math:`C/[\tau_0(1+\alpha\kappa_C C)]`
+    approaches the constant :math:`1/(\tau_0\alpha\kappa_C)` and carbon
+    accumulates at the fixed rate :math:`E - 1/(\tau_0\alpha\kappa_C)` for
+    ever. Chapter 26 measures that rate to within 8 % of the asymptote at
+    :math:`t = 2\times10^4`; the model stops being integrable long before
+    :math:`\rho_{\rm eff}` reaches anything sane.
+
+    Measured against the model: 0.999, 0.998, 0.992 of the predicted value at
+    :math:`g = 0.16, 0.32, 0.48`, degrading to 0.87 at :math:`g = 0.80` where
+    :math:`\rho_{\rm eff}` has left the range over which
+    :math:`d\langle z\rangle/d\rho` was fitted.
+    """
+    gain = earth_system_loop_gain(
+        emissions, sink_time, sink_sensitivity, carbon_forcing, slow_coupling
+    )
+    if gain >= 1.0:
+        return float("inf")
+    base = slow_coupling * (
+        rho_ref * _Z_SLOPE + _Z_INTERCEPT - reference_z
+    )
+    return float((1.0 + sink_sensitivity * base) / (1.0 - gain))
 

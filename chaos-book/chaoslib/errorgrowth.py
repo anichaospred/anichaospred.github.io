@@ -24,6 +24,9 @@ __all__ = [
     "cascade_rates",
     "cascade_growth",
     "cascade_contamination_time",
+    "initialised_error_variance",
+    "initialised_advantage",
+    "initialised_useful_lead",
     "KOLMOGOROV_ALPHA",
 ]
 
@@ -392,3 +395,100 @@ def cascade_contamination_time(
     )
     hits = solution.t_events[0]
     return float(hits[0]) if hits.size else float("nan")
+
+
+# --------------------------------------------------------------------------
+# Initialised prediction of a slow component (chapter 26)
+# --------------------------------------------------------------------------
+def initialised_error_variance(
+    lead: Array, memory: float, analysis_error: float, climatological_sd: float
+) -> Array:
+    r"""Error variance of an initialised forecast of an Ornstein-Uhlenbeck
+    component with memory :math:`T`.
+
+    .. math::
+        \operatorname{var}\varepsilon(\ell)
+          = \epsilon^2 e^{-2\ell/T} + 2\sigma^2\!\left(1 - e^{-2\ell/T}\right)
+
+    Forecast and truth share their predictable part
+    :math:`S_0 e^{-\ell/T}` up to the analysis error :math:`\epsilon`, and
+    their unpredictable parts are independent -- which is why the saturation is
+    :math:`2\sigma^2` and not :math:`\sigma^2`. Getting that factor of two
+    wrong shifts the useful lead of :func:`initialised_useful_lead` by about a
+    fifth of a memory time, which is how it was caught.
+    """
+    lead = np.asarray(lead, dtype=float)
+    decay = np.exp(-2.0 * lead / float(memory))
+    return (
+        float(analysis_error) ** 2 * decay
+        + 2.0 * float(climatological_sd) ** 2 * (1.0 - decay)
+    )
+
+
+def initialised_advantage(
+    lead: Array, memory: float, analysis_error: float, climatological_sd: float
+) -> Array:
+    r"""Error-variance advantage of initialising over drawing from climatology.
+
+    .. math::
+        \operatorname{var}\varepsilon_{\rm uninit}
+          - \operatorname{var}\varepsilon_{\rm init}
+          = \left(2\sigma^2 - \epsilon^2\right) e^{-2\ell/T}
+
+    An uninitialised forecast has error variance :math:`2\sigma^2` at *every*
+    lead, so the whole lead-dependence sits in the initialised arm and the
+    advantage decays as a pure exponential with rate :math:`2/T`. **That makes
+    the decay of forecast skill a direct measurement of the component's
+    memory**, needing no autocorrelation estimate -- which matters because a
+    reservoir driven by fast weather carries a small high-frequency component
+    that biases a lag-1 estimate of :math:`T` low by a factor of three or more
+    (chapter 26, section 1).
+
+    Measured against the model at :math:`\epsilon = 0.3\sigma`, the fitted
+    decay rate is 0.87 to 1.01 of :math:`2/T` for reservoirs with
+    :math:`T \ge 8`, and 1.24 at :math:`T = 2` where the reservoir is not
+    slow enough for the weather to look white.
+    """
+    lead = np.asarray(lead, dtype=float)
+    return (
+        2.0 * float(climatological_sd) ** 2 - float(analysis_error) ** 2
+    ) * np.exp(-2.0 * lead / float(memory))
+
+
+def initialised_useful_lead(
+    memory: float,
+    analysis_error: float,
+    climatological_sd: float,
+    fraction: float = 0.95,
+) -> float:
+    r"""Lead at which an initialised forecast's RMSE reaches ``fraction`` of an
+    uninitialised one's -- the point past which initialising has stopped paying.
+
+    .. math::
+        \ell^\ast = -\frac{T}{2}
+          \ln \frac{2\sigma^2\left(1 - f^2\right)}{2\sigma^2 - \epsilon^2}
+
+    **The useful lead is strictly proportional to the memory.** The threshold
+    and the analysis error set only the coefficient: at
+    :math:`\epsilon = 0.3\sigma` and :math:`f = 0.95` it is
+    :math:`1.141\,T`. So no observing system, however good, buys decadal skill
+    in a component whose memory is a season -- the coefficient improves like a
+    logarithm while the memory multiplies.
+
+    Returns ``inf`` when the analysis is already better than the threshold
+    demands (:math:`\epsilon^2 \ge 2\sigma^2(1-f^2)`... in which case the
+    forecast never degrades that far, which cannot happen for
+    :math:`f < 1` and finite :math:`\epsilon`), and ``nan`` for an analysis
+    no better than climatology.
+    """
+    sigma2 = 2.0 * float(climatological_sd) ** 2
+    eps2 = float(analysis_error) ** 2
+    if not 0.0 < float(fraction) < 1.0:
+        raise ValueError("fraction must lie strictly between 0 and 1")
+    if eps2 >= sigma2:
+        return float("nan")
+    ratio = sigma2 * (1.0 - float(fraction) ** 2) / (sigma2 - eps2)
+    if ratio >= 1.0:
+        return 0.0
+    return float(-0.5 * float(memory) * np.log(ratio))
+

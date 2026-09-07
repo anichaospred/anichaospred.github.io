@@ -36,6 +36,7 @@ __all__ = [
     "reliability_diagram",
     "brier_decomposition",
     "value_score",
+    "emergent_constraint",
 ]
 
 
@@ -439,3 +440,65 @@ def value_score(
             np.nan if denominator == 0.0 else (climate - expense) / denominator
         )
     return values
+
+
+def emergent_constraint(
+    predictor: Array,
+    response: Array,
+    observed: float,
+    observed_error: float = 0.0,
+) -> dict[str, float]:
+    r"""Constrain a projected ``response`` by regressing it on an observable
+    ``predictor`` across an ensemble, then substituting the observation.
+
+    Returns ``slope``, ``intercept``, ``correlation``, ``constrained_mean``,
+    ``constrained_sd``, ``unconstrained_sd`` and ``reduction`` (the fractional
+    narrowing of the spread).
+
+    The constrained spread is the regression's prediction error at the observed
+    predictor, propagated with the observational uncertainty:
+
+    .. math::
+        \sigma_{\rm c}^2 = s^2\!\left(1 + \frac1n
+            + \frac{(x_{\rm obs} - \bar x)^2}{S_{xx}}\right)
+            + (b\,\sigma_{\rm obs})^2 ,
+
+    with :math:`s` the residual standard error and :math:`b` the slope.
+
+    **This function cannot tell you whether the constraint is legitimate**, and
+    that is the point chapter 26 makes with it. It reports the narrowing that
+    the regression implies; whether that narrowing means anything depends on
+    whether the predictor is a monotone function of the physics driving the
+    response, which is a question about the model ensemble and not about the
+    arithmetic. In chapter 26 a predictor that matches its exact theoretical
+    expectation to 5.7 %, with within-record correlation 0.99, still correlates
+    with the response at only +0.37 across a one-parameter ensemble and at
+    **-0.005** with the feedback factor it is nominally constraining once a
+    second parameter varies.
+    """
+    x = np.asarray(predictor, dtype=float).ravel()
+    y = np.asarray(response, dtype=float).ravel()
+    if x.size != y.size:
+        raise ValueError("predictor and response must have the same length")
+    if x.size < 3:
+        raise ValueError("need at least three ensemble members")
+    n = x.size
+    slope, intercept = np.polyfit(x, y, 1)
+    residual = y - (slope * x + intercept)
+    s2 = float((residual**2).sum() / (n - 2))
+    sxx = float(((x - x.mean()) ** 2).sum())
+    leverage = 1.0 + 1.0 / n + (float(observed) - x.mean()) ** 2 / sxx
+    constrained_sd = float(
+        np.sqrt(s2 * leverage + (slope * float(observed_error)) ** 2)
+    )
+    unconstrained_sd = float(y.std(ddof=1))
+    return {
+        "slope": float(slope),
+        "intercept": float(intercept),
+        "correlation": float(np.corrcoef(x, y)[0, 1]),
+        "constrained_mean": float(slope * float(observed) + intercept),
+        "constrained_sd": constrained_sd,
+        "unconstrained_sd": unconstrained_sd,
+        "reduction": float(1.0 - constrained_sd / unconstrained_sd),
+    }
+
