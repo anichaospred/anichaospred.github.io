@@ -363,8 +363,34 @@ start and no link is dead.
     from a handful of members. **Initialisation is worth nothing** — two ensembles from
     disjoint start sets differ by 1 % of internal variability — the sharp contrast with
     chapter 24's 8 TU. *Knob:* forcing rate, ensemble size.
-26. **Earth system prediction** — Coupled, carbon-cycle and cryosphere components;
-    what "initialising" a slow component means; frontiers.
+26. ★ **Earth system prediction** — Chapter 24's coupling extended: four reservoirs
+    spanning a factor of 64 in memory, and -- the structural change -- a forcing that
+    is **part of the state**, a carbon reservoir emissions fill and a
+    climate-dependent sink drains. The reservoirs are passive on purpose, which is how
+    chapter 24's :math:`\lambda\kappa` wall is avoided: the carbon loop's gain and
+    amplitude are independent parameters. **Memory is a parameter, amplitude a
+    consequence** -- :math:`\sigma_S` falls as :math:`1/\sqrt T`, exceeding
+    Hasselmann's law by 2.23, 1.55, 1.19, 1.10 as :math:`T` grows, and a lag-1 fit to
+    the fastest reservoir returns a memory 3x too short. **The useful lead of an
+    initialised forecast is** :math:`1.141\,T` **and essentially nothing else**: the
+    advantage decays as :math:`e^{-2\ell/T}` exactly (measured rate ratios 1.24, 0.87,
+    1.01, 0.89; lead ratios 1.32, 1.05, 1.04, 1.16, so 4--5 % for the reservoirs that
+    are genuinely slow), and a hundredfold better analysis moves the coefficient 2 %.
+    **The feedback has an exactly solvable gain**, :math:`C/C_0 = 1/(1-g)` to 0.67 %
+    for :math:`g \le 0.5`, failing by 13.5 % at :math:`g = 0.8` not because the
+    feedback is strong but because :math:`\mathrm{d}\langle z\rangle/\mathrm{d}\rho`
+    is no longer the number it was fitted at; past :math:`g = 1` the sink **saturates**
+    (carbon accumulates at a fixed rate, 0.96 of the asymptote) rather than exploding.
+    **Three uncertainty sources whose ranking depends on the question**: internal
+    variability is 10.85 % of the spread at lead 600 for :math:`T = 2` and 0.05 % for
+    :math:`T = 128`. **And an emergent constraint that is a perfect measurement of the
+    wrong quantity** -- the observable matches its closed form to 5.7 % with a
+    within-record correlation of 0.99, yet correlates with the response at +0.37 in one
+    parameter, -0.44 in two, and **-0.005** with the feedback factor itself, because it
+    turns over at :math:`\alpha \approx 0.07`; two members 1.6 % apart in the
+    observable differ 6.3-fold in response. Limitation stated and tested: no permanent
+    airborne fraction, so no zero-emissions commitment. *Knob:* reservoir memory,
+    feedback strength.
 27. ★ **Regimes, bistability, and tipping points** — The tilted double well
     :math:`\dot x = x - x^3 + \mu + \sigma\xi`, a gradient system, so the
     stationary density is exactly Boltzmann (measured to 4.6 % over a factor of
@@ -468,18 +494,16 @@ Pyodide build every reader's browser receives.
 
 | | Count |
 |---|---|
-| Chapters live | **24** (1, 4–25, 27) |
-| Chapters stubbed | 7 |
+| Chapters live | **25** (1, 4–27) |
+| Chapters stubbed | 6 |
 | `chaoslib` modules | 15 |
-| `chaoslib` tests | 296, all passing |
+| `chaoslib` tests | 311, all passing |
 
 **Next chapters, in priority order** — each already has most of its material in hand:
 
-1. **Ch. 26** (Earth system prediction) — the hardest of Part VI to do honestly at low
-   order; consider what it can measure before committing to it.
-2. **Ch. 2 and 3** (Part I) — ch. 2 needs a shallow-water balance system in `chaoslib`;
+1. **Ch. 2 and 3** (Part I) — ch. 2 needs a shallow-water balance system in `chaoslib`;
    ch. 3 is mostly synthesis across systems already present.
-3. **Ch. 20's diet** — unblocked since chapter 19; see the note below.
+2. **Ch. 20's diet** — unblocked since chapter 19; see the note below.
 
 ### A second decision on record: splitting chapter 20
 

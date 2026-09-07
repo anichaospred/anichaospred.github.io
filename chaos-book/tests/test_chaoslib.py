@@ -4708,3 +4708,296 @@ def test_noise_carries_the_system_over_before_the_fold_is_reached():
     with pytest.raises(ValueError):
         earlywarning.noise_advanced_fold(0.1, 1e-4, quantile=1.0)
 
+
+# ==========================================================================
+# Chapter 26: Earth system prediction -- a reservoir hierarchy with a
+# forcing that is part of the state
+# ==========================================================================
+ES_TIMESCALES = (2.0, 8.0, 32.0, 128.0)
+
+
+def test_earth_system_reduces_to_lorenz63_bitwise():
+    """With no carbon feedback on the Rayleigh number the fast subsystem must
+    be Lorenz 63 *bitwise*, so a coupled run and an uncoupled control share a
+    discretisation exactly."""
+    grid = integrate.trajectory_grid(20.0, 0.01)
+    plain = integrate.rk4(systems.lorenz63, np.array([1.0, 1.0, 20.0]), grid)
+    full = integrate.rk4(
+        systems.earth_system, systems.earth_system_state(), grid,
+        slow_timescales=ES_TIMESCALES,
+    )
+    assert np.array_equal(plain, full[:, :3])
+
+
+def test_earth_system_reservoirs_decay_at_their_own_timescales():
+    r"""Undriven, each reservoir is exactly :math:`S_k(0)e^{-t/T_k}`. This is
+    what makes the memory hierarchy a set of *parameters* rather than an
+    emergent property -- worth being explicit about, because section 1 of the
+    chapter measures the *amplitude*, which is not a parameter."""
+    grid = integrate.trajectory_grid(30.0, 0.01)
+    start = systems.earth_system_state(slow=[1.0, 1.0, 1.0, 1.0])
+    run = integrate.rk4(
+        systems.earth_system, start, grid,
+        slow_timescales=ES_TIMESCALES, slow_coupling=0.0,
+    )
+    _, reservoirs, _ = systems.earth_system_split(run)
+    exact = np.exp(-grid[:, None] / np.asarray(ES_TIMESCALES))
+    assert np.abs(reservoirs - exact).max() < 1e-10
+
+
+def test_earth_system_carbon_decays_at_the_sink_time():
+    """With no emissions and no climate sensitivity of the sink, carbon is a
+    pure exponential -- the reference the feedback is measured against."""
+    grid = integrate.trajectory_grid(30.0, 0.01)
+    run = integrate.rk4(
+        systems.earth_system, systems.earth_system_state(carbon=1.0), grid,
+        slow_timescales=ES_TIMESCALES, sink_time=7.0,
+    )
+    _, _, carbon = systems.earth_system_split(run)
+    assert np.abs(carbon - np.exp(-grid / 7.0)).max() < 1e-12
+
+
+def test_earth_system_state_split_and_emissions_helpers():
+    """Round-trip the state layout, and the emissions step function."""
+    state = systems.earth_system_state(
+        fast=(1.0, 2.0, 3.0), slow=[0.1, 0.2, 0.3, 0.4], carbon=5.0
+    )
+    fast, reservoirs, carbon = systems.earth_system_split(state)
+    assert np.allclose(fast, [1.0, 2.0, 3.0])
+    assert np.allclose(reservoirs, [0.1, 0.2, 0.3, 0.4])
+    assert carbon == pytest.approx(5.0)
+    assert systems.earth_system_state(n_slow=2).size == 6
+    assert np.allclose(
+        systems.earth_system_emissions(np.array([0.0, 99.0, 101.0]), 0.2, 100.0),
+        [0.2, 0.2, 0.0],
+    )
+
+
+def test_earth_system_has_no_permanent_airborne_fraction():
+    """A limitation asserted rather than glossed: when emissions cease the sink
+    removes *all* the carbon, so the forcing returns to its unforced value and
+    this model cannot represent a zero-emissions commitment."""
+    grid = integrate.trajectory_grid(1200.0, 0.01)
+    run = integrate.rk4(
+        systems.earth_system, systems.earth_system_state(), grid,
+        slow_timescales=ES_TIMESCALES, emissions=0.16, emissions_stop=200.0,
+        sink_time=50.0, sink_sensitivity=0.04, carbon_forcing=1.0,
+    )
+    _, reservoirs, carbon = systems.earth_system_split(run)
+    peak = float(carbon.max())
+    assert peak > 8.0                                   # it really was forced
+    assert float(carbon[-1]) < 1e-3 * peak              # and it all comes back
+    assert np.abs(reservoirs[-1]).max() < 0.5 * peak
+
+
+def test_earth_system_parameters_broadcast_over_the_ensemble():
+    """Per-member parameters in one call -- what makes a perturbed-parameter
+    ensemble affordable, and asserted because a silent broadcast failure would
+    give every member the first member's physics."""
+    alphas = np.array([0.0, 0.02, 0.04, 0.06])
+    members = np.stack([systems.earth_system_state() for _ in alphas])
+    grid = integrate.trajectory_grid(2500.0, 0.01)
+    run = integrate.rk4(
+        systems.earth_system, members, grid, slow_timescales=ES_TIMESCALES,
+        emissions=0.16, sink_time=50.0, sink_sensitivity=alphas,
+        carbon_forcing=1.0,
+    )
+    equilibrium = run[int(0.6 * run.shape[0]):, :, -1].mean(axis=0)
+    assert np.all(np.diff(equilibrium) > 0)             # stronger feedback, more carbon
+    # and each member matches the closed form for its own parameter
+    for alpha, measured in zip(alphas, equilibrium):
+        predicted = 0.16 * 50.0 * systems.earth_system_amplification(
+            0.16, 50.0, alpha, 1.0
+        )
+        assert measured == pytest.approx(predicted, rel=0.03)
+
+
+def test_carbon_climate_amplification_is_one_over_one_minus_the_loop_gain():
+    r"""The closed form :math:`C/C_0 = (1 + \alpha S_1^{\rm base})/(1-g)`,
+    against the model. Asserted only for :math:`g \le 0.5`: beyond that
+    :math:`\rho_{\rm eff}` leaves the range over which
+    :math:`d\langle z\rangle/d\rho` was measured, and the chapter reports the
+    degradation instead of hiding it."""
+    grid = integrate.trajectory_grid(2500.0, 0.01)
+    for alpha in (0.02, 0.04, 0.06):
+        gain = systems.earth_system_loop_gain(0.16, 50.0, alpha, 1.0)
+        assert 0.0 < gain <= 0.5
+        run = integrate.rk4(
+            systems.earth_system, systems.earth_system_state(), grid,
+            slow_timescales=ES_TIMESCALES, emissions=0.16, sink_time=50.0,
+            sink_sensitivity=alpha, carbon_forcing=1.0,
+        )
+        measured = float(run[int(0.6 * run.shape[0]):, -1].mean()) / (0.16 * 50.0)
+        assert measured == pytest.approx(
+            systems.earth_system_amplification(0.16, 50.0, alpha, 1.0), rel=0.02
+        )
+    assert systems.earth_system_loop_gain(0.16, 50.0, 0.0, 1.0) == 0.0
+    assert systems.earth_system_amplification(0.16, 50.0, 0.0, 1.0) == pytest.approx(
+        1.0, abs=1e-3
+    )
+    assert np.isinf(systems.earth_system_amplification(0.16, 50.0, 0.13, 1.0))
+
+
+def test_the_carbon_sink_saturates_rather_than_exploding():
+    r"""Past :math:`g = 1` the residence time grows linearly in :math:`C`, so
+    the sink term tends to the constant :math:`1/(\tau_0\alpha\kappa)` and
+    carbon accumulates at a *fixed rate* for ever. Distinguishing that from a
+    blow-up matters, because "runaway" is the usual word for it."""
+    alpha, tau, kappa, emissions = 0.20, 50.0, 1.0, 0.16
+    assert systems.earth_system_loop_gain(emissions, tau, alpha, kappa) > 1.0
+    grid = integrate.trajectory_grid(12000.0, 0.02)
+    run = integrate.rk4(
+        systems.earth_system, systems.earth_system_state(), grid,
+        slow_timescales=ES_TIMESCALES, emissions=emissions, sink_time=tau,
+        sink_sensitivity=alpha, carbon_forcing=kappa,
+    )
+    carbon = run[:, -1]
+    assert np.isfinite(carbon).all()
+    late = grid > 9000.0
+    rate = float(np.polyfit(grid[late], carbon[late], 1)[0])
+    asymptote = emissions - 1.0 / (tau * alpha * kappa)
+    assert asymptote > 0.0
+    assert rate == pytest.approx(asymptote, rel=0.15)
+
+
+def test_reservoir_amplitude_approaches_the_hasselmann_law():
+    r"""Hasselmann's content is the *amplitude*: a reservoir integrating white
+    weather has :math:`\sigma_S = \sigma_z\sqrt{\tau_{\rm int}/T}`, so
+    :math:`\sigma_S\sqrt{T}` is constant. It is only asymptotic -- the weather
+    is not white on the timescale of the fastest reservoir -- so what is
+    asserted is that the approach is monotone and its successive corrections
+    shrink."""
+    timescales = (2.0, 8.0, 32.0)
+    run = integrate.rk4(
+        systems.earth_system, systems.earth_system_state(n_slow=3),
+        integrate.trajectory_grid(3000.0, 0.01), slow_timescales=timescales,
+    )[50000:]
+    _, reservoirs, _ = systems.earth_system_split(run, n_slow=3)
+    scaled = reservoirs.std(axis=0) * np.sqrt(np.asarray(timescales))
+    assert np.all(np.diff(scaled) < 0)                  # approached from above
+    decrements = -np.diff(scaled)
+    assert np.all(np.diff(decrements) < 0)              # and the approach converges
+
+
+def test_initialised_advantage_is_exponential_and_its_limits_are_right():
+    r"""The closed forms: error variance is :math:`\epsilon^2` at zero lead and
+    saturates at :math:`2\sigma^2` -- not :math:`\sigma^2`, because forecast
+    and truth decorrelate *independently* -- and the advantage is a pure
+    exponential with rate :math:`2/T`."""
+    memory, eps, sd = 20.0, 0.3, 1.0
+    assert errorgrowth.initialised_error_variance(
+        0.0, memory, eps, sd
+    ) == pytest.approx(eps**2)
+    assert errorgrowth.initialised_error_variance(
+        1e6, memory, eps, sd
+    ) == pytest.approx(2.0 * sd**2)
+    leads = np.array([0.0, 5.0, 20.0, 60.0])
+    advantage = errorgrowth.initialised_advantage(leads, memory, eps, sd)
+    assert advantage[0] == pytest.approx(2.0 * sd**2 - eps**2)
+    assert np.allclose(
+        advantage / advantage[0], np.exp(-2.0 * leads / memory)
+    )
+    slope = np.polyfit(leads, np.log(advantage), 1)[0]
+    assert slope == pytest.approx(-2.0 / memory, rel=1e-10)
+
+
+def test_useful_lead_is_strictly_proportional_to_the_memory():
+    """The coefficient depends only on the threshold and the analysis error, so
+    the useful lead scales with the memory and nothing else can rescue a
+    short-memory component."""
+    ratios = [
+        errorgrowth.initialised_useful_lead(T, 0.3, 1.0) / T
+        for T in (2.0, 8.0, 32.0, 128.0)
+    ]
+    assert np.allclose(ratios, ratios[0], rtol=1e-12)
+    assert ratios[0] == pytest.approx(1.1409, abs=1e-3)
+    # a better analysis buys only a logarithm
+    # a hundredfold better analysis moves the coefficient by 2 %: 1.141 -> 1.164
+    better = errorgrowth.initialised_useful_lead(10.0, 0.03, 1.0) / 10.0
+    assert better == pytest.approx(1.1637, abs=1e-3)
+    assert better / ratios[0] < 1.03
+    assert np.isnan(errorgrowth.initialised_useful_lead(10.0, 2.0, 1.0))
+    with pytest.raises(ValueError):
+        errorgrowth.initialised_useful_lead(10.0, 0.3, 1.0, fraction=1.0)
+
+
+def test_the_model_reproduces_the_predicted_advantage_decay():
+    """The physics premise, not just the algebra: run initialised and
+    uninitialised forecasts of a reservoir and check the measured advantage
+    decays at the predicted rate."""
+    memory, dt, keep = 8.0, 0.01, 10
+    control = integrate.rk4(
+        systems.earth_system, systems.earth_system_state(n_slow=1),
+        integrate.trajectory_grid(2000.0, dt), slow_timescales=(memory,),
+    )[20000::keep]
+    store_dt = dt * keep
+    sd = float(control[:, 3].std())
+    lead_steps = int(round(30.0 / store_dt))
+    cases = np.linspace(0, control.shape[0] - lead_steps - 1, 150).astype(int)
+    rng = np.random.default_rng(3)
+
+    initialised = control[cases].copy()
+    uninitialised = control[cases].copy()
+    fast_error = rng.normal(0.0, 0.1, (cases.size, 3))
+    initialised[:, :3] += fast_error
+    uninitialised[:, :3] += fast_error
+    initialised[:, 3] += rng.normal(0.0, 0.3 * sd, cases.size)
+    uninitialised[:, 3] = control[
+        rng.integers(0, control.shape[0], cases.size), 3
+    ]
+
+    grid = integrate.trajectory_grid(30.0, dt)
+    run_i = integrate.rk4(
+        systems.earth_system, initialised, grid, slow_timescales=(memory,)
+    )[::keep]
+    run_u = integrate.rk4(
+        systems.earth_system, uninitialised, grid, slow_timescales=(memory,)
+    )[::keep]
+    truth = np.stack(
+        [control[c: c + run_i.shape[0], 3] for c in cases], axis=1
+    )
+    leads = np.arange(run_i.shape[0]) * store_dt
+    advantage = (
+        ((run_u[:, :, 3] - truth) ** 2).mean(axis=1)
+        - ((run_i[:, :, 3] - truth) ** 2).mean(axis=1)
+    )
+    window = (leads > 0.15 * memory) & (leads < 1.6 * memory) & (advantage > 0)
+    assert window.sum() > 5
+    slope = np.polyfit(leads[window], np.log(advantage[window]), 1)[0]
+    assert slope == pytest.approx(-2.0 / memory, rel=0.25)
+    assert advantage[0] > 0.5 * (2.0 * sd**2)
+
+
+def test_emergent_constraint_recovers_a_known_regression():
+    """Against synthetic data with a known slope and known residual scatter."""
+    rng = np.random.default_rng(11)
+    x = rng.normal(size=500)
+    y = 2.0 * x + rng.normal(scale=0.5, size=500)
+    out = ensemble.emergent_constraint(x, y, observed=0.0, observed_error=0.0)
+    assert out["slope"] == pytest.approx(2.0, rel=0.05)
+    assert out["constrained_sd"] == pytest.approx(0.5, rel=0.1)
+    assert out["unconstrained_sd"] == pytest.approx(np.sqrt(4.0 + 0.25), rel=0.1)
+    assert out["reduction"] > 0.7
+    # observational error propagates through the slope
+    noisy = ensemble.emergent_constraint(x, y, observed=0.0, observed_error=1.0)
+    assert noisy["constrained_sd"] > out["constrained_sd"]
+    assert noisy["constrained_sd"] == pytest.approx(
+        np.sqrt(out["constrained_sd"] ** 2 + (out["slope"]) ** 2), rel=0.05
+    )
+
+
+def test_emergent_constraint_reports_no_narrowing_when_there_is_none():
+    """An unrelated predictor must not appear to constrain anything -- the
+    failure the chapter measures is a *real* predictor that nonetheless carries
+    no information, so the arithmetic had better not manufacture some."""
+    rng = np.random.default_rng(13)
+    x = rng.normal(size=400)
+    y = rng.normal(size=400)
+    out = ensemble.emergent_constraint(x, y, observed=float(x.mean()))
+    assert abs(out["correlation"]) < 0.15
+    assert abs(out["reduction"]) < 0.05
+    with pytest.raises(ValueError):
+        ensemble.emergent_constraint([1.0, 2.0], [1.0, 2.0, 3.0], 1.0)
+    with pytest.raises(ValueError):
+        ensemble.emergent_constraint([1.0, 2.0], [1.0, 2.0], 1.0)
+
