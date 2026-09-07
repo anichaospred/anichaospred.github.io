@@ -11,9 +11,13 @@ status: "live"
 Every forecast starts from a state nobody knows. The atmosphere is observed at
 scattered points, by instruments that disagree, at times that do not line up — and
 from that a forecast centre must produce a complete, physically consistent initial
-condition for a model with $10^8$ degrees of freedom. Data assimilation is how, and
-this chapter runs the three algorithms that do it on a system small enough to watch
-every step.
+condition for a model with $10^8$ degrees of freedom. Data assimilation is how.
+
+[Chapter 18]({{< relref "ch18_variational-da.md" >}}) and
+[chapter 19]({{< relref "ch19_ensemble-da.md" >}}) derive the machinery. This chapter
+asks what happens when you **run it for ever**: three schemes cycled on the same
+problem, a check on whether the ensemble they produce is honest, and the effect of
+observing less often.
 
 The chapter then asks the question that decides observing-system budgets: **if every
 observation were ten times more accurate, how much forecast would that buy?** The
@@ -28,26 +32,20 @@ transforming it.
 A perfect-model twin experiment on Lorenz 63: a nature run stands in for the truth,
 noisy observations are drawn from it every $\Delta t_{\rm obs}$, and a deliberately
 wrong background stands in for prior knowledge. Three schemes then compete on the
-same observations.
+same observations, held identical across all three along with $\mathbf{B}$,
+$\mathbf{R}$ and the observation times, so that the comparison measures the scheme and
+not the setup.
 
-**3D-Var** minimises
-
-$$\mathcal{J}(\mathbf{x}) = \tfrac12 (\mathbf{x}-\mathbf{x}^b)^T \mathbf{B}^{-1}(\mathbf{x}-\mathbf{x}^b) + \tfrac12 (\mathbf{y}-\mathbf{H}\mathbf{x})^T \mathbf{R}^{-1}(\mathbf{y}-\mathbf{H}\mathbf{x}),$$
-
-a tug of war between what you believed and what you measured. Its limitation is
-structural: $\mathbf{B}$ is the same on every day of the year, whatever the flow is
-doing.
-
-**4D-Var** fits one model trajectory to all observations in a window, so an
-observation late in the window constrains the state at its start. The gradient needs
-the **adjoint** built in [chapter 15]({{< relref "ch15_tangent-linear-adjoint.md" >}}) —
-one adjoint application per observation time, rather than one model run per degree of
-freedom. That asymmetry is the only reason variational assimilation is affordable at
-operational size.
-
-**The EnKF** estimates the background covariance from an ensemble, so it is
-flow-dependent for free, at the cost of sampling error — hence inflation and
-localisation.
+The schemes themselves are **not derived here**. 3D-Var and 4D-Var — the cost function,
+the adjoint gradient and how to know it is right, the Hessian as the analysis-error
+covariance, window length, the incremental form — are
+[chapter 18]({{< relref "ch18_variational-da.md" >}}). The EnKF — sampling error and
+why localisation is compulsory, inflation, deterministic versus stochastic updates,
+hybrids — is [chapter 19]({{< relref "ch19_ensemble-da.md" >}}). What is left for this
+chapter is the part those two set aside: a single analysis is a problem in linear
+algebra, while running one every few time units for ever against a system whose errors
+double on the same timescale is a different problem, and the one an operational centre
+actually has.
 
 All three come from `chaoslib.assimilate`, which is tested against the
 linear-Gaussian Kalman filter for both the analysis **mean** and the analysis
@@ -65,13 +63,15 @@ the figures looked amiss.
 
 ## Exercises
 
-**Analytic.** Show that the 3D-Var minimiser equals the Kalman analysis
-$\mathbf{x}^a = \mathbf{x}^b + \mathbf{K}(\mathbf{y}-\mathbf{H}\mathbf{x}^b)$ for
-linear $\mathbf{H}$. Then explain why operational centres minimise $\mathcal{J}$
-iteratively anyway, given that the closed form exists.
+**Analytic.** Cycling reaches a steady state: the analysis error at one cycle sets the
+background error at the next, which the next analysis partly removes. Write that as a
+one-dimensional map — background error grows by $e^{\lambda \Delta t_{\rm obs}}$ over
+the interval, then the analysis contracts it by the Kalman gain — and find its fixed
+point. Then show why the fixed point exists only for $\Delta t_{\rm obs}$ below a
+threshold, and relate that threshold to the divergence seen in section 5.
 
 **Computational.** Derive $\Delta t = \ln 10/\lambda$ from
-$t_c = \lambda^{-1}\ln(\delta_c/\delta_0)$, then check the measured slope in section 8
+$t_c = \lambda^{-1}\ln(\delta_c/\delta_0)$, then check the measured slope in section 6
 against $1/\lambda_1$ computed independently in
 [chapter 7]({{< relref "../part3/ch07_lyapunov-exponents.md" >}}). They agree to a few
 percent by two completely different routes — one from the dynamics, one from forecast
