@@ -273,11 +273,15 @@ start and no link is dead.
     Hybrids came out small (8 % on top of localisation, against a ±2.5 % noise floor)
     and the chapter says why that is the friendliest case for a localised ensemble
     rather than a verdict on hybrids. *Knob:* ensemble size, localisation radius. †
-20. ★ **Data assimilation in practice** — Cycling 3D-Var, 4D-Var and the EnKF on
-    Lorenz 63; analysis error as the floor on forecast error; and the logarithmic
-    return on better observations, $\Delta t = \ln 10/\lambda$ — measured directly,
-    and agreeing with $1/\lambda_1$ from chapter 7 to a few percent by an entirely
-    independent route. *Knob:* ensemble size, inflation, observation interval,
+20. ★ **Data assimilation in practice** — The *practice* half: the schemes are
+    derived in chapters 18 and 19 and used here rather than rebuilt (see the note in
+    §6). Cycling 3D-Var, 4D-Var and the EnKF on Lorenz 63 with everything but the
+    scheme held fixed; whether the ensemble is honest; observing less often; and the
+    logarithmic return on better observations, $\Delta t = \ln 10/\lambda$ —
+    measured directly, and agreeing with $1/\lambda_1$ from chapter 7 to a few
+    percent by an entirely independent route. The three-way comparison is explicitly
+    **not** a ranking: three variables, perfect model, every component observed, so
+    localisation cannot bite. *Knob:* ensemble size, inflation, observation interval,
     $\delta_0$.
 21. ★ **Model error and the imperfect-model problem** — Three error sources, three
     growth laws: IC error exponential, deterministic bias **linear** in $t$ (measured
@@ -503,7 +507,6 @@ Pyodide build every reader's browser receives.
 
 1. **Ch. 2 and 3** (Part I) — ch. 2 needs a shallow-water balance system in `chaoslib`;
    ch. 3 is mostly synthesis across systems already present.
-2. **Ch. 20's diet** — unblocked since chapter 19; see the note below.
 
 ### A second decision on record: splitting chapter 20
 
@@ -514,12 +517,28 @@ would leave gaps. As chapters 18 and 19 are written they should take the corresp
 theory sections, and chapter 20 should shrink to cycling, analysis error and the
 logarithmic return — which is its real subject.
 
-**Status: now unblocked.** Chapters 18 and 19 are both live and each carries its
-theory in far more depth than chapter 20's sections 3 and 4 do. The condition for
-cutting has therefore been met: chapter 20's sections 2--4 should now be cut *together*
-and replaced by cross-references, leaving it as the cycling-and-return chapter it was
-always meant to be. Cutting them one at a time was never safe -- section 4 assumes
-section 3 -- which is why this waited for both neighbours rather than one.
+**Status: done.** Chapters 18 and 19 are both live and each carries its theory in far
+more depth than chapter 20's sections 3 and 4 did, so the condition for cutting was
+met and the cut was made as its own change -- deliberately not folded into chapter 19,
+because it edits a live, tested chapter for coherence rather than correctness.
 
-This is deliberately **not** done as part of chapter 19: it edits a live, tested chapter
-for tidiness rather than correctness, and it should be its own reviewable change.
+What went: the three theory sections (3D-Var's cost function and closed form, 4D-Var's
+window cost and adjoint gradient, the EnKF's forecast and analysis steps with its
+inflation and localisation notes) and the three per-method figures, which the
+side-by-side comparison already subsumed -- it plots all three methods' analysis error
+on one axis with a bar chart of the means. 274 lines, about a fifth of the chapter.
+
+What stayed: the twin experiment, the three *runs* (they feed the comparison and the
+reliability scatter, and the EnKF sliders are the chapter's knob), and everything from
+section 5 onward. A new compact section 2 names each scheme in one line, tabulates
+their temporal scope and covariance, points at chapters 18 and 19 for the derivations,
+and lists what is held fixed so the comparison means something. Sections renumbered
+5--9 to 3--7.
+
+Two pieces of prose were rescued from the cut cells rather than lost with them: the
+warning that the three-way comparison is **not** a ranking -- three variables,
+perfect model, every component observed, so localisation cannot bite -- and the
+observation that 4D-Var beats 3D-Var on timing alone. Both now sit in section 3, where
+the comparison is. Chapter 20's own material -- 3D-Var as Tikhonov regularisation,
+4D-Var as backpropagation through time, the EnKF as a Monte-Carlo Kalman filter -- was
+checked against 18 and 19 and appears in neither, so it stayed.

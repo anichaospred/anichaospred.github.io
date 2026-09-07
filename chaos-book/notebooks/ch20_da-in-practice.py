@@ -188,10 +188,13 @@ def title(mo):
     The atmosphere is observed at scattered points, by instruments that disagree,
     at times that do not line up — and from that, a forecast centre has to produce
     a complete, physically consistent initial condition for a model with a hundred
-    million degrees of freedom. Data assimilation is how. This chapter runs the
-    three algorithms that do it, on a system small enough to watch, and then asks
-    the question that decides observing-system policy: **if you could make every
-    observation ten times more accurate, how much forecast would you buy?**
+    million degrees of freedom. Data assimilation is how.
+
+    Chapters 18 and 19 derive the machinery. This chapter asks what happens when you
+    **run it for ever** — cycling three schemes on the same problem, checking whether
+    the ensemble they produce is honest, and then asking the question that decides
+    observing-system policy: **if you could make every observation ten times more
+    accurate, how much forecast would you buy?**
 
     The answer is not "ten times more". It is a fixed number of days — and then
     the next factor of ten buys the same fixed number again.
@@ -212,14 +215,12 @@ def orientation(mo):
     a system. It sits at the heart of numerical weather prediction, ocean
     reanalysis, and increasingly of hybrid AI/physics forecasting systems.
 
-    Three foundational algorithms, on the Lorenz 63 system as a low-dimensional but
-    genuinely chaotic testbed:
-
-    | Algorithm | Temporal scope | Background covariance |
-    |-----------|---------------|----------------------|
-    | **3D-Var** | Single analysis time | Static $\mathbf{B}$ |
-    | **4D-Var** | Time window $[t_0, t_N]$ | Static $\mathbf{B}$, implicit flow-dependence |
-    | **EnKF**  | Sequential / cycling | Flow-dependent, from the ensemble |
+    This chapter is the **practice** half of the subject. The three foundational
+    algorithms are derived in the two chapters before it — variational assimilation in
+    chapter 18, ensemble assimilation in chapter 19 — and are *used* here rather than
+    rebuilt, on the Lorenz 63 system as a low-dimensional but genuinely chaotic
+    testbed. What is new here is cycling, reliability, observation frequency, and the
+    return on observation accuracy.
 
     ### What you need before this chapter
 
@@ -228,6 +229,8 @@ def orientation(mo):
     - The tangent linear and adjoint models — chapter 15. 4D-Var *is* the adjoint,
       put to work.
     - Ensembles and spread–skill — chapter 17.
+    - **3D-Var and 4D-Var — chapter 18**, and **the EnKF — chapter 19**. This chapter
+      assumes both, and re-derives neither.
 
     Everything numerical here comes from `chaoslib.assimilate`, which is tested
     against the linear-Gaussian Kalman filter, against the adjoint identity, and —
@@ -322,55 +325,49 @@ def sec1_fig(
 
 
 # ===========================================================================
-# 2. 3D-Var
+# 2. The schemes, and where they are derived
 # ===========================================================================
 @app.cell(hide_code=True)
 def sec2_text(mo):
     mo.md(
         r"""
     ---
-    ## 2 · 3D-Var — three-dimensional variational assimilation
+    ## 2 · The three schemes, and where they are derived
 
-    ### Theory
+    Three algorithms run on the same twin experiment. Their **derivations are not
+    repeated here**, because the two chapters before this one do them properly:
 
-    3D-Var finds the analysis $\mathbf{x}^a$ by minimising the **cost function**
+    * **3D-Var and 4D-Var** — the cost function and its two terms, the adjoint
+      gradient and how to know it is right, the Hessian as the analysis-error
+      covariance, how long the window should be, and the incremental form and when it
+      fails — are **chapter 18**.
+    * **The EnKF** — why sampling error makes localisation compulsory rather than
+      optional, what localisation actually does to the rank, inflation, deterministic
+      versus stochastic updates, and hybrid covariances — is
+      **chapter 19**.
 
-    $$
-    \mathcal{J}(\mathbf{x}) =
-    \underbrace{\frac{1}{2}(\mathbf{x} - \mathbf{x}^b)^T \mathbf{B}^{-1}(\mathbf{x} - \mathbf{x}^b)}_{\mathcal{J}_b \text{ — background term}}
-    +
-    \underbrace{\frac{1}{2}(\mathbf{y} - \mathbf{H}\mathbf{x})^T \mathbf{R}^{-1}(\mathbf{y} - \mathbf{H}\mathbf{x})}_{\mathcal{J}_o \text{ — observation term}}
-    $$
+    What each scheme *is*, in one line, is all this chapter needs:
 
-    The two terms are a tug of war: stay near what you believed, stay near what you
-    measured, each weighted by how much you trust it. The gradient the minimiser
-    needs is
+    | Scheme | Temporal scope | Background covariance | Adjoint |
+    |---|---|---|---|
+    | **3D-Var** | one analysis time | static $\mathbf{B}$ | not needed |
+    | **4D-Var** | window $[t_0, t_N]$ | static $\mathbf{B}$, implicit flow-dependence | **required** |
+    | **EnKF** | sequential | flow-dependent, from the ensemble | not needed |
 
-    $$
-    \nabla_{\mathbf{x}} \mathcal{J} = \mathbf{B}^{-1}(\mathbf{x} - \mathbf{x}^b) - \mathbf{H}^T \mathbf{R}^{-1}(\mathbf{y} - \mathbf{H}\mathbf{x}),
-    $$
+    **What this chapter adds is the part those two leave out: what happens when you
+    cycle.** Chapters 18 and 19 each analyse a single analysis in depth. A single
+    analysis is a weighted average of two estimates, and getting it right is a
+    problem in linear algebra. Running one every few time units for ever, against a
+    system whose errors double on the same timescale, is a different problem — and it
+    is the one an operational centre actually has.
 
-    and setting it to zero gives, for linear $\mathbf{H}$, the closed form
+    Held fixed across all three, so that the comparison measures the scheme and not
+    the setup: the same nature run, the same observation times and the same
+    realisation of observation noise, the same background $\mathbf{B}$, the same
+    observation error $\mathbf{R}$, and the same perfect model.
 
-    $$
-    \mathbf{x}^a = \mathbf{x}^b + \mathbf{K}(\mathbf{y} - \mathbf{H}\mathbf{x}^b), \qquad
-    \mathbf{K} = \mathbf{B} \mathbf{H}^T (\mathbf{H} \mathbf{B} \mathbf{H}^T + \mathbf{R})^{-1}.
-    $$
-
-    `chaoslib.assimilate.three_dvar_update` evaluates that closed form, and the
-    library's tests check it against the Kalman filter analysis — they must agree
-    exactly, because for the same $\mathbf{B}$ they are the same estimator.
-    Operational systems minimise $\mathcal{J}$ iteratively instead, not because the
-    algebra is wrong but because $\mathbf{H}$ is nonlinear and $\mathbf{B}$ is far too
-    large to invert.
-
-    ### Key limitations
-
-    * **Atemporal**: uses observations at a single time — no memory of the trajectory.
-    * **Static $\mathbf{B}$**: the same background covariance on every day of the
-      year, whatever the flow is doing. This is the limitation that everything else
-      in this chapter exists to fix.
-    * Simple and fast — and still used operationally in many regional systems.
+    The sliders below set the EnKF's ensemble size and inflation. Everything
+    downstream — the comparison, the reliability scatter — re-runs when they move.
     """
     )
     return
@@ -416,149 +413,6 @@ def run_3dvar(
         ]))
     )
     return analyses_3dvar, backgrounds_3dvar, cycle_3dvar, rmse_3dvar_an, rmse_3dvar_bg
-
-
-@app.cell
-def component_panels(go, make_subplots, np, plotting):
-    def component_figure(
-        t_full, truth_full, obs_t, obs_v, series, title, height=560
-    ):
-        """Three stacked panels, one per state component: the book's DA figure.
-
-        `series` is a list of (label, times, values, colour, mode) so each of the
-        three algorithms below draws itself the same way -- the reader compares
-        panels rather than relearning a layout.
-        """
-        _fig = make_subplots(
-            rows=3, cols=1, shared_xaxes=True, vertical_spacing=0.045,
-            subplot_titles=("X", "Y", "Z"),
-        )
-        for _row, _c in enumerate([0, 1, 2], start=1):
-            _show = _row == 1
-            _fig.add_scatter(
-                x=t_full, y=truth_full[:, _c], mode="lines",
-                line=dict(width=2.2, color=plotting.C_TRUTH),
-                name="truth", legendgroup="truth", showlegend=_show,
-                row=_row, col=1,
-            )
-            _fig.add_scatter(
-                x=obs_t, y=obs_v[:, _c], mode="markers",
-                marker=dict(size=6, color=plotting.C_OBS, symbol="diamond-open",
-                            line=dict(width=1.4)),
-                name="observations", legendgroup="obs", showlegend=_show,
-                row=_row, col=1,
-            )
-            for _label, _ts, _vs, _colour, _mode in series:
-                _fig.add_scatter(
-                    x=_ts, y=np.asarray(_vs)[:, _c], mode=_mode,
-                    line=dict(width=2, color=_colour, dash="dot"
-                              if _mode == "lines" and _label.startswith("background")
-                              else "solid"),
-                    marker=dict(size=7, color=_colour),
-                    name=_label, legendgroup=_label, showlegend=_show,
-                    row=_row, col=1,
-                )
-        plotting.style2d(_fig, height=height, title=title)
-        _fig.update_xaxes(title_text="time (MTU)", row=3, col=1)
-        return _fig
-
-    return (component_figure,)
-
-
-@app.cell(hide_code=True)
-def fig_3dvar(
-    analyses_3dvar, backgrounds_3dvar, component_figure, mo, np, obs_times,
-    observations, plotting, rmse_3dvar_an, rmse_3dvar_bg, t_assim, truth
-):
-    _an_t = np.array([a[0] for a in analyses_3dvar])
-    _an_v = np.array([a[1] for a in analyses_3dvar])
-    _bg_t = np.array([b[0] for b in backgrounds_3dvar])
-    _bg_v = np.array([b[1] for b in backgrounds_3dvar])
-
-    _fig = component_figure(
-        t_assim, truth, obs_times, observations,
-        [
-            ("background (before analysis)", _bg_t, _bg_v, plotting.C_BG, "markers"),
-            ("3D-Var analysis", _an_t, _an_v, plotting.C_ANALYSIS, "markers"),
-        ],
-        "3D-Var: cycling analyses against the truth",
-    )
-    mo.vstack([
-        _fig,
-        mo.md(
-            f"""**Background RMSE {rmse_3dvar_bg:.3f} → analysis RMSE
-            {rmse_3dvar_an:.3f}.** Each analysis pulls the state back towards the
-            truth, and the forecast between observations pushes it away again. The
-            analysis is never as good as the observations are accurate
-            ($\\sigma_o = 2$) *and* never as bad as the background it started from —
-            it sits between, which is exactly what a weighted average of the two
-            should do."""
-        ),
-    ])
-    return
-
-
-# ===========================================================================
-# 3. 4D-Var
-# ===========================================================================
-@app.cell(hide_code=True)
-def sec3_text(mo):
-    mo.md(
-        r"""
-    ---
-    ## 3 · 4D-Var — four-dimensional variational assimilation
-
-    ### Theory
-
-    4D-Var extends 3D-Var to **a time window** $[t_0, t_N]$. We seek the initial
-    condition $\mathbf{x}_0$ that, when propagated by the model $\mathcal{M}$, best
-    fits *all* the observations in the window at once:
-
-    $$
-    \mathcal{J}(\mathbf{x}_0) =
-    \frac{1}{2}(\mathbf{x}_0 - \mathbf{x}_0^b)^T \mathbf{B}^{-1}(\mathbf{x}_0 - \mathbf{x}_0^b)
-    +
-    \sum_{k=0}^{N}
-    \frac{1}{2}(\mathbf{y}_k - \mathbf{H}\mathbf{x}_k)^T \mathbf{R}^{-1}(\mathbf{y}_k - \mathbf{H}\mathbf{x}_k),
-    \qquad \mathbf{x}_k = \mathcal{M}_{0 \to t_k}(\mathbf{x}_0).
-    $$
-
-    The analysis is no longer a state at one instant but a **trajectory** — the model
-    is used as a constraint, so the answer is automatically dynamically consistent.
-
-    ### The gradient is where the adjoint earns its keep
-
-    $$
-    \nabla_{\mathbf{x}_0}\mathcal{J} = \mathbf{B}^{-1}(\mathbf{x}_0 - \mathbf{x}_0^b)
-    - \sum_k \mathbf{M}_{0 \to t_k}^{\!\top}\,\mathbf{H}^T \mathbf{R}^{-1}(\mathbf{y}_k - \mathbf{H}\mathbf{x}_k)
-    $$
-
-    Each innovation is carried back to the start of the window by the **adjoint**
-    $\mathbf{M}^{\!\top}$ built in chapter 15. The cost is one adjoint application per
-    observation time — *not* one model run per degree of freedom, which is what a
-    finite-difference gradient would need. For Lorenz 63 that is the difference
-    between 3 extra model runs and 1; for a global model it is the difference
-    between feasible and impossible, and it is the whole reason 4D-Var exists.
-
-    This chapter uses the **exact adjoint gradient**, via
-    `chaoslib.assimilate.four_dvar_analysis`. The library's test suite checks it
-    against central differences of the same cost function and requires agreement to
-    better than one part in $10^7$; it currently agrees to about one part in $10^9$.
-    That test is not decoration — it caught two real interval bugs in the propagator
-    while this chapter was being written, either of which left the gradient about 7%
-    wrong in a way no amount of tuning the minimiser would have revealed.
-
-    ### Advantage over 3D-Var
-
-    * Observations spread over a **window** all constrain one trajectory.
-    * Flow-dependence arrives implicitly: the model's own dynamics propagate
-      information from an observation late in the window back to the start.
-    * The minimiser is quasi-Newton (L-BFGS-B). Fixed-step steepest descent is not a
-      viable substitute here — with accurate observations $\mathbf{R}^{-1}$ is large,
-      and any step big enough to converge sends the Lorenz trajectory to overflow.
-    """
-    )
-    return
 
 
 @app.cell
@@ -614,110 +468,13 @@ def run_4dvar(
 
 
 @app.cell(hide_code=True)
-def fig_4dvar(
-    WINDOW_SIZE, analyses_4dvar, component_figure, mo, np, obs_times, observations,
-    plotting, rmse_3dvar_an, rmse_4dvar, t_assim, truth
-):
-    _an_t = np.array([a[0] for a in analyses_4dvar])
-    _an_v = np.array([a[1] for a in analyses_4dvar])
-    _fig = component_figure(
-        t_assim, truth, obs_times, observations,
-        [("4D-Var analysis (window start)", _an_t, _an_v, plotting.C_ANALYSIS, "markers")],
-        f"4D-Var: one analysis per {WINDOW_SIZE}-observation window",
-    )
-    _better = 100.0 * (rmse_3dvar_an - rmse_4dvar) / rmse_3dvar_an
-    mo.vstack([
-        _fig,
-        mo.md(
-            f"""**4D-Var analysis RMSE {rmse_4dvar:.3f}**, against
-            {rmse_3dvar_an:.3f} for 3D-Var — about **{_better:.0f}% better** from the
-            same observations and the same $\\mathbf{{B}}$.
-
-            The improvement comes entirely from *when* the observations are used.
-            3D-Var sees five observations one at a time and forgets each before the
-            next; 4D-Var fits one trajectory through all five, so an observation at
-            the end of the window constrains the state at the beginning. There are
-            far fewer analysis points on this figure than on the last one, and the
-            result is still better."""
-        ),
-    ])
-    return
-
-
-# ===========================================================================
-# 4. Ensemble Kalman filter
-# ===========================================================================
-@app.cell(hide_code=True)
-def sec4_text(mo):
-    mo.md(
-        r"""
-    ---
-    ## 4 · The ensemble Kalman filter
-
-    ### Theory
-
-    The EnKF (Evensen 1994) replaces the static $\mathbf{B}$ with a
-    **flow-dependent** background error covariance estimated from an ensemble of $N$
-    model trajectories:
-
-    $$
-    \mathbf{B}^f \approx \mathbf{P}^f = \frac{1}{N-1}\sum_{i=1}^{N}
-    (\mathbf{x}^f_i - \bar{\mathbf{x}}^f)(\mathbf{x}^f_i - \bar{\mathbf{x}}^f)^T
-    $$
-
-    **Forecast step** — propagate each member through the full nonlinear model:
-    $\mathbf{x}^f_i(t+1) = \mathcal{M}(\mathbf{x}^a_i(t))$.
-
-    **Analysis step** (perturbed-observation form):
-
-    $$
-    \mathbf{x}^a_i = \mathbf{x}^f_i + \mathbf{K}(\mathbf{y}_i - \mathbf{H}\mathbf{x}^f_i),
-    \quad \mathbf{y}_i = \mathbf{y} + \boldsymbol{\epsilon}_i,
-    \quad \boldsymbol{\epsilon}_i \sim \mathcal{N}(0, \mathbf{R}),
-    \qquad
-    \mathbf{K} = \mathbf{P}^f \mathbf{H}^T (\mathbf{H} \mathbf{P}^f \mathbf{H}^T + \mathbf{R})^{-1}
-    $$
-
-    Each member assimilates its *own* perturbed observation. Without that
-    perturbation the analysis ensemble comes out systematically too narrow — it would
-    report more confidence than it has earned.
-
-    ### Key strengths
-
-    * Fully nonlinear forecast step, and **no adjoint required** — which is why the
-      EnKF spread to ocean, land and coupled systems long before variational methods
-      did.
-    * $\mathbf{P}^f$ adapts to the local geometry of the attractor, collapsing onto
-      the unstable manifold where errors are actually growing.
-    * It delivers an ensemble, so the forecast is probabilistic by construction
-      rather than as an afterthought.
-
-    ### Practical notes
-
-    * **Ensemble size $N$ is critical.** Too small and $\mathbf{P}^f$ is rank
-      deficient with spurious long-range correlations, and the filter diverges — it
-      becomes so confident in a wrong background that it stops listening to the
-      observations at all.
-    * The standard remedies are **inflation** (multiply the spread by $1+\delta$) and
-      **localisation** (taper distant covariances, e.g. `chaoslib.assimilate.gaspari_cohn`).
-      Localisation does nothing in a 3-variable system where every variable is close
-      to every other; in a global model it is indispensable.
-
-    Move the sliders below. A larger ensemble costs a proportionally longer run, so
-    $N = 50$ takes a noticeably longer time in the browser than $N = 20$.
-    """
-    )
-    return
-
-
-@app.cell(hide_code=True)
 def enkf_controls(mo):
     n_members = mo.ui.slider(
         start=10, stop=50, step=10, value=20, label="ensemble size $N$"
     )
     # The range extends BELOW 1: this configuration comes out over-dispersed, so
     # inflation alone cannot reach reliability. Deflation is a diagnostic here,
-    # not an operational technique -- see the discussion under section 6.
+    # not an operational technique -- see the discussion under section 4.
     inflation = mo.ui.slider(
         start=0.85, stop=1.30, step=0.05, value=1.05,
         label="inflation (below 1 = deflation)",
@@ -776,46 +533,43 @@ def run_enkf(
     return cycle_enkf, enkf_errors, enkf_final, enkf_means, enkf_spreads, rmse_enkf
 
 
-@app.cell(hide_code=True)
-def fig_enkf(
-    component_figure, enkf_means, inflation, mo, n_members, np, obs_times,
-    observations, plotting, rmse_3dvar_an, rmse_4dvar, rmse_enkf, t_assim, truth
-):
-    _fig = component_figure(
-        t_assim, truth, obs_times, observations,
-        [("EnKF ensemble mean", obs_times, enkf_means, plotting.C_MEAN, "markers")],
-        f"EnKF: ensemble-mean analyses (N = {n_members.value}, "
-        f"inflation = {inflation.value:.2f})",
-    )
-    mo.vstack([
-        _fig,
-        mo.md(
-            f"""**EnKF analysis RMSE {rmse_enkf:.3f}** — against
-            {rmse_4dvar:.3f} (4D-Var) and {rmse_3dvar_an:.3f} (3D-Var).
-
-            Do not read that ordering as a general ranking of the three methods. It
-            is one realisation, on a 3-variable perfect-model problem where all
-            components are observed at every analysis time — about the friendliest
-            possible setting for an ensemble method, and one where localisation,
-            the EnKF's main practical difficulty, cannot bite. Try $N = 10$ and
-            inflation $1.0$ and watch the filter start to lose the truth."""
-        ),
-    ])
-    return
-
-
 # ===========================================================================
-# 5. Side by side, and reliability
+# 3. Side by side, and reliability
 # ===========================================================================
 @app.cell(hide_code=True)
-def sec5_text(mo):
+def sec3_text(mo):
     mo.md(
         r"""
     ---
-    ## 5 · Side by side
+    ## 3 · Side by side
 
-    All three on one axis. The quantity plotted is the per-component RMS error of
-    each method's analysis against the truth, at every analysis time.
+    All three on one axis, plus the background — the forecast each analysis was
+    launched from. The quantity plotted is the per-component RMS error against the
+    truth, at every analysis time.
+
+    Two things to look for. **The background stays bounded**, which is the whole point
+    of cycling: a free forecast from the same starting error would have lost the truth
+    entirely long before the end of this window, and instead every analysis pulls it
+    back. And **4D-Var does better than 3D-Var from the same observations and the same
+    $\mathbf{B}$**, with far fewer analysis points, purely because of *when* the
+    observations are used — 3D-Var sees five observations one at a time and forgets
+    each before the next, while 4D-Var fits one trajectory through all five, so an
+    observation at the end of a window constrains the state at its start.
+
+    /// admonition | This figure is not a ranking of the three schemes
+        type: warning
+
+    It is one realisation, on a three-variable perfect-model problem where **every
+    component is observed at every analysis time**. That is about the friendliest
+    possible setting for an ensemble method, and one where localisation — the EnKF's
+    central practical difficulty, and most of chapter 19 — cannot bite at all, because
+    in three variables every variable is close to every other.
+
+    Read the ordering as "all three work, and cycling is what makes them work". For
+    which scheme wins where, chapter 19's section 4 maps the ensemble-size and
+    localisation plane, and chapter 18's section 5 measures what a window length is
+    worth.
+    ///
     """
     )
     return
@@ -882,11 +636,11 @@ def fig_comparison(
 
 
 @app.cell(hide_code=True)
-def sec6_text(mo):
+def sec4_text(mo):
     mo.md(
         r"""
     ---
-    ## 6 · Is the ensemble honest? Spread against error
+    ## 4 · Is the ensemble honest? Spread against error
 
     An ensemble makes a claim about its own uncertainty, and that claim can be
     checked. For a **reliable** ensemble the RMS spread equals the RMS error of the
@@ -971,14 +725,14 @@ def fig_reliability(
 
 
 # ===========================================================================
-# 7. Observation frequency
+# 5. Observation frequency
 # ===========================================================================
 @app.cell(hide_code=True)
-def sec7_text(mo):
+def sec5_text(mo):
     mo.md(
         r"""
     ---
-    ## 7 · Observing less often
+    ## 5 · Observing less often
 
     The first question an observing-system planner asks is not "how accurate?" but
     "how often?". Below, the same 3D-Var and EnKF cycling is repeated with the
@@ -1058,14 +812,14 @@ def fig_obs_frequency(go, interval_sweep, mo, np, plotting):
 
 
 # ===========================================================================
-# 8. The logarithmic return on observations -- the chapter's centrepiece
+# 6. The logarithmic return on observations -- the chapter's centrepiece
 # ===========================================================================
 @app.cell(hide_code=True)
-def sec8_text(mo):
+def sec6_text(mo):
     mo.md(
         r"""
     ---
-    ## 8 · The logarithmic return on better observations
+    ## 6 · The logarithmic return on better observations
 
     Now the question that decides budgets. Suppose an observing-system upgrade
     reduces the analysis error by a factor of ten. **How much forecast does that
@@ -1266,14 +1020,14 @@ one favourite.
 
 
 # ===========================================================================
-# 9. Takeaways
+# 7. Takeaways
 # ===========================================================================
 @app.cell(hide_code=True)
 def takeaways(mo):
     mo.md(
         r"""
     ---
-    ## 9 · What to take away
+    ## 7 · What to take away
 
     | Feature | 3D-Var | 4D-Var | EnKF |
     |---------|-------|-------|------|
@@ -1320,7 +1074,7 @@ def takeaways(mo):
     2. Find the inflation that centres the reliability scatter on the diagonal. Is the
        value that gives the best RMSE the same as the value that gives the best
        reliability? (It usually is not, and that tension is real.)
-    3. In section 8, change the useful-forecast threshold from 0.5 to 0.2 and to 0.8.
+    3. In section 6, change the useful-forecast threshold from 0.5 to 0.2 and to 0.8.
        The horizons all move — does the *slope* move? It should not, and the reason it
        does not is the point of the whole section.
 
