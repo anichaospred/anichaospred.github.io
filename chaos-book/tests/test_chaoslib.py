@@ -28,6 +28,7 @@ from chaoslib import (
     adjoint,
     assimilate,
     dimension,
+    earlywarning,
     ensemble,
     errorgrowth,
     information,
@@ -4398,3 +4399,312 @@ def test_the_forced_response_does_not_depend_on_where_the_ensemble_started():
     internal = float(np.std(spun[:, 2]))
     difference = abs(responses[0][tail].mean() - responses[1][tail].mean())
     assert difference < 0.25 * internal
+
+
+# ==========================================================================
+# Chapter 27: bistability, tipping, and early-warning indicators
+# ==========================================================================
+MU_C, X_C = 2.0 / (3.0 * np.sqrt(3.0)), -1.0 / np.sqrt(3.0)
+
+
+def test_the_fold_is_exact_not_approximate():
+    """At a fold both the right-hand side and its derivative vanish. Both are
+    algebraic identities at :math:`(\\mu_c, x_c) = (2/3\\sqrt3, -1/\\sqrt3)`,
+    so they hold to machine precision rather than to tolerance -- which is
+    what distinguishes a fold from a merely small restoring rate."""
+    mu_c, x_c = systems.double_well_fold()
+    assert mu_c == pytest.approx(MU_C, abs=1e-15)
+    assert x_c == pytest.approx(X_C, abs=1e-15)
+    assert abs(systems.double_well(0.0, x_c, mu=mu_c)) < 1e-15
+    assert abs(1.0 - 3.0 * x_c**2) < 1e-15
+
+    mirrored_mu, mirrored_x = systems.double_well_fold(sign=-1)
+    assert abs(systems.double_well(0.0, mirrored_x, mu=mirrored_mu)) < 1e-15
+
+
+def test_fixed_point_count_changes_at_the_fold():
+    """Three states below the fold, one above, and every returned point an
+    exact zero of the flow. The *count* is the diagnostic: a system with one
+    fixed point has nothing to tip from."""
+    for mu in (0.0, 0.1, 0.2, 0.3, MU_C - 1e-6):
+        points = systems.double_well_fixed_points(mu)
+        assert points.size == 3
+        assert np.all(np.diff(points) > 0)
+        assert np.max(np.abs(systems.double_well(0.0, points, mu=mu))) < 1e-12
+    for mu in (MU_C + 1e-6, 0.5, 1.0):
+        points = systems.double_well_fixed_points(mu)
+        assert points.size == 1
+        assert abs(systems.double_well(0.0, points[0], mu=mu)) < 1e-12
+        assert np.isnan(systems.double_well_barrier(mu))
+        assert np.isnan(systems.double_well_restoring_rate(mu))
+
+
+def test_double_well_is_the_gradient_of_its_potential():
+    """:math:`\\dot x = -V'(x)`, checked by central difference. This is what
+    makes the stationary density exactly Boltzmann, so getting it wrong would
+    invalidate every escape-rate result in the chapter."""
+    x = np.linspace(-1.8, 1.8, 61)
+    h = 1e-6
+    for mu in (0.0, 0.2, -0.35):
+        gradient = (
+            systems.double_well_potential(x + h, mu)
+            - systems.double_well_potential(x - h, mu)
+        ) / (2.0 * h)
+        assert np.allclose(-gradient, systems.double_well(0.0, x, mu=mu), atol=1e-8)
+
+
+def test_barrier_and_restoring_rate_match_their_exact_near_fold_asymptotes():
+    r"""Expanding :math:`f` about the fold, where :math:`f_{xx} = 2\sqrt3`,
+    gives :math:`\Delta V \to \frac43 3^{-1/4} d^{3/2}` and
+    :math:`\lambda \to -2\cdot3^{1/4}\sqrt d` for :math:`d = \mu_c - \mu`.
+
+    The 3/2 power is the substantive one: the barrier vanishes faster than the
+    distance to the fold, which is why escape preempts the bifurcation."""
+    for d, tol in ((0.01, 0.02), (0.001, 0.005)):
+        mu = MU_C - d
+        barrier = systems.double_well_barrier(mu)
+        rate = systems.double_well_restoring_rate(mu)
+        assert barrier == pytest.approx((4.0 / 3.0) * 3.0**-0.25 * d**1.5, rel=tol)
+        assert rate == pytest.approx(-2.0 * 3.0**0.25 * np.sqrt(d), rel=10 * tol)
+    # and the barrier is monotone in the distance to the fold, everywhere
+    distances = np.array([0.3, 0.2, 0.1, 0.05, 0.02, 0.01, 0.005])
+    barriers = np.array([systems.double_well_barrier(MU_C - d) for d in distances])
+    assert np.all(np.diff(barriers) < 0)
+
+
+def test_ramped_double_well_is_bitwise_double_well_at_zero_rate():
+    """As for chapter 25's ramped Lorenz 63: the zero-rate control and the
+    ramped run must share a discretisation exactly, or a comparison between
+    them measures the grouping of the arithmetic."""
+    grid = integrate.trajectory_grid(40.0, 0.01)
+    start = np.linspace(-1.4, 1.4, 25)
+    plain = integrate.rk4(systems.double_well, start, grid, mu=0.2)
+    ramped = integrate.rk4(
+        systems.double_well_ramped, start, grid, mu_start=0.2, mu_rate=0.0
+    )
+    assert np.array_equal(plain, ramped)
+    assert np.array_equal(
+        systems.double_well_ramp(grid, 0.2, 0.0), np.full(grid.size, 0.2)
+    )
+
+
+def test_stationary_density_is_boltzmann():
+    r"""For a gradient flow with additive noise the stationary density is
+    exactly :math:`p \propto e^{-2V/\sigma^2}`. Comparing the *ratio* of the
+    two lobes' populations against that integral tests the drift and the
+    integrator's :math:`\sigma\sqrt{\Delta t}` noise convention **together**,
+    over a ratio that spans a factor of eight."""
+    dt = 0.01
+    grid = integrate.trajectory_grid(300.0, dt)
+    x_grid = np.linspace(-2.5, 2.5, 20001)
+    for mu, noise, tol in ((0.05, 0.4, 0.08), (0.15, 0.5, 0.08)):
+        run = integrate.rk4_stochastic(
+            systems.double_well, np.linspace(-1.5, 1.5, 200), grid,
+            noise_std=noise, seed=2, mu=mu,
+        )
+        sample = run[grid.size // 4:].ravel()
+        measured = (sample > 0).sum() / (sample < 0).sum()
+        weight = np.exp(-2.0 * systems.double_well_potential(x_grid, mu) / noise**2)
+        exact = weight[x_grid > 0].sum() / weight[x_grid < 0].sum()
+        assert measured == pytest.approx(exact, rel=tol)
+
+
+def test_kramers_slope_is_twice_the_barrier():
+    r"""The escape time is exponential in the inverse noise variance with
+    slope exactly :math:`2\Delta V`. The *prefactor* is only asymptotic and is
+    optimistic at these barrier heights, so the slope is what is asserted --
+    and only over noise levels at which **every** member escaped, since a
+    censored mean biases the slope (see :func:`earlywarning.escape_times`)."""
+    mu, dt = 0.28, 0.01
+    barrier = systems.double_well_barrier(mu)
+    grid = integrate.trajectory_grid(600.0, dt)
+    well = systems.double_well_fixed_points(mu)[0]
+    saddle = systems.double_well_fixed_points(mu)[1]
+
+    inverse, log_tau = [], []
+    for noise in (0.20, 0.24, 0.28):
+        run = integrate.rk4_stochastic(
+            systems.double_well, np.full(300, well), grid,
+            noise_std=noise, seed=13, mu=mu,
+        )
+        times = earlywarning.escape_times(run, saddle, grid)
+        assert not np.isnan(times).any(), "censored: lengthen the run"
+        inverse.append(1.0 / noise**2)
+        log_tau.append(np.log(times.mean()))
+    slope = np.polyfit(inverse, log_tau, 1)[0]
+    assert slope == pytest.approx(2.0 * barrier, rel=0.10)
+
+
+def test_ou_variance_and_autocorrelation_take_their_exact_values():
+    r"""The two quantities every early-warning indicator estimates:
+    :math:`\operatorname{var} = \sigma^2/2|\lambda|` and
+    :math:`\alpha = e^{\lambda\Delta t}`. Measured in the left well, where
+    the linearisation is valid."""
+    dt, sample, noise = 0.01, 0.25, 0.06
+    every = int(round(sample / dt))
+    grid = integrate.trajectory_grid(400.0, dt)
+    for mu in (0.0, 0.2):
+        well = systems.double_well_fixed_points(mu)[0]
+        rate = systems.double_well_restoring_rate(mu)
+        run = integrate.rk4_stochastic(
+            systems.double_well, np.full(200, well), grid,
+            noise_std=noise, seed=17, mu=mu,
+        )
+        series = run[grid.size // 5:: every]
+        assert float(series.std(axis=0).mean()) == pytest.approx(
+            earlywarning.ou_stationary_std(noise, rate), rel=0.08
+        )
+        alpha = float(np.mean(earlywarning.lag1_autocorrelation(series)))
+        assert alpha == pytest.approx(np.exp(rate * sample), rel=0.05)
+        assert float(
+            np.mean(earlywarning.ar1_restoring_rate(series, sample))
+        ) == pytest.approx(rate, rel=0.15)
+
+
+def test_variance_and_autocorrelation_both_rise_towards_the_fold():
+    """The premise of the whole early-warning literature, measured rather than
+    assumed: both indicators increase monotonically as the fold is
+    approached, at a noise low enough that the well still holds the system."""
+    dt, sample, noise = 0.01, 0.25, 0.05
+    every = int(round(sample / dt))
+    grid = integrate.trajectory_grid(300.0, dt)
+    variances, autocorrelations = [], []
+    for mu in (0.0, 0.15, 0.25, 0.32):
+        well = systems.double_well_fixed_points(mu)[0]
+        run = integrate.rk4_stochastic(
+            systems.double_well, np.full(150, well), grid,
+            noise_std=noise, seed=19, mu=mu,
+        )
+        series = run[grid.size // 5:: every]
+        variances.append(float(series.var(axis=0).mean()))
+        autocorrelations.append(
+            float(np.mean(earlywarning.lag1_autocorrelation(series)))
+        )
+    assert np.all(np.diff(variances) > 0)
+    assert np.all(np.diff(autocorrelations) > 0)
+
+
+def test_kendall_tau_agrees_with_scipy():
+    """Against the reference implementation on random data with ties, and at
+    its two exact extremes."""
+    from scipy import stats
+
+    rng = np.random.default_rng(5)
+    for _ in range(5):
+        y = rng.normal(size=40)
+        assert earlywarning.kendall_tau(y) == pytest.approx(
+            stats.kendalltau(np.arange(y.size), y).statistic, rel=1e-12
+        )
+    tied = rng.integers(0, 3, size=30).astype(float)
+    assert earlywarning.kendall_tau(tied) == pytest.approx(
+        stats.kendalltau(np.arange(tied.size), tied).statistic, rel=1e-12
+    )
+    assert earlywarning.kendall_tau(np.arange(10.0)) == pytest.approx(1.0)
+    assert earlywarning.kendall_tau(-np.arange(10.0)) == pytest.approx(-1.0)
+
+
+def test_sliding_indicators_recover_a_known_ar1():
+    r"""On a synthetic AR(1) with known :math:`\alpha` the sliding
+    autocorrelation recovers it, the sliding variance recovers
+    :math:`\sigma^2/(1-\alpha^2)`, and neither trends -- so a rising indicator
+    on a stationary record is a false alarm, not a signal."""
+    rng = np.random.default_rng(23)
+    alpha, innovation, n = 0.8, 0.3, 4000
+    x = np.empty(n)
+    x[0] = 0.0
+    noise = rng.normal(scale=innovation, size=n)
+    for i in range(1, n):
+        x[i] = alpha * x[i - 1] + noise[i]
+
+    centres, variance = earlywarning.sliding_variance(x, width=400, step=50)
+    _, autocorrelation = earlywarning.sliding_lag1_autocorrelation(
+        x, width=400, step=50
+    )
+    assert centres[0] == pytest.approx(199.5)
+    assert float(variance.mean()) == pytest.approx(
+        innovation**2 / (1.0 - alpha**2), rel=0.15
+    )
+    assert float(autocorrelation.mean()) == pytest.approx(alpha, rel=0.08)
+    assert abs(earlywarning.kendall_tau(variance)) < 0.6
+    assert abs(earlywarning.kendall_tau(autocorrelation)) < 0.6
+
+    with pytest.raises(ValueError):
+        earlywarning.sliding_variance(x[:100], width=400)
+    with pytest.raises(ValueError):
+        earlywarning.sliding_variance(x, width=2)
+
+
+def test_detrending_is_what_keeps_a_trend_out_of_the_variance():
+    """A pure straight line has zero residual variance; without detrending its
+    variance is large and rises with the slope, which would manufacture an
+    early warning out of the drift towards the new state."""
+    line = 3.0 * np.arange(200.0)
+    assert float(earlywarning.detrend(line).var()) < 1e-18
+    assert float(line.var()) > 1e4
+    ensemble_lines = np.stack([line, -2.0 * line, np.zeros_like(line)], axis=1)
+    assert np.all(earlywarning.detrend(ensemble_lines).var(axis=0) < 1e-18)
+
+
+def test_escape_times_reports_censoring_rather_than_hiding_it():
+    """A member that never crosses returns ``nan``, so a censored sample
+    cannot be silently averaged."""
+    times = np.arange(0.0, 10.0, 1.0)
+    series = np.stack(
+        [
+            np.where(times >= 4.0, 1.0, -1.0),   # crosses at t = 4
+            np.full(times.size, -1.0),           # never crosses
+        ],
+        axis=1,
+    )
+    escapes = earlywarning.escape_times(series, 0.0, times)
+    assert escapes[0] == pytest.approx(4.0)
+    assert np.isnan(escapes[1])
+    below = earlywarning.escape_times(-series, 0.0, times, above=False)
+    assert below[0] == pytest.approx(4.0)
+    with pytest.raises(ValueError):
+        earlywarning.escape_times(series, 0.0, times[:5])
+
+
+def test_deterministic_fold_delay_matches_the_airy_constant():
+    r"""A noiseless system swept through a fold leaves it *late*, by
+    :math:`|a_1|3^{-1/6}\gamma^{2/3} = 1.9469\,\gamma^{2/3}` where
+    :math:`a_1` is the first zero of Airy's function. Measured at two rates,
+    approaching the asymptote from below as the sweep slows."""
+    ratios = []
+    for rate in (0.002, 0.001):
+        grid = integrate.trajectory_grid(1.3 * MU_C / rate, 0.005)
+        run = integrate.rk4(
+            systems.double_well_ramped, np.array([-1.0]), grid,
+            mu_start=0.0, mu_rate=rate,
+        )[:, 0]
+        tipped = rate * grid[np.argmax(run > 0.0)]
+        ratios.append((tipped - MU_C) / earlywarning.fold_delay(rate))
+    assert all(0.90 < r < 1.0 for r in ratios)
+    assert ratios[1] > ratios[0]
+
+
+def test_noise_carries_the_system_over_before_the_fold_is_reached():
+    r"""The chapter's central quantitative claim. Integrating Kramers' rate
+    along the ramp predicts the median tipping tilt in closed form; the bare
+    :math:`\sigma^{4/3}` scaling that drops the logarithm does not.
+
+    Measured here at one noise level; the chapter measures five and the
+    closed form holds to 3 % across all of them."""
+    noise, rate, dt = 0.13, 1.0e-4, 0.02
+    predicted = earlywarning.noise_advanced_fold(noise, rate)
+    grid = integrate.trajectory_grid(1.1 * MU_C / rate, dt)
+    run = integrate.rk4_stochastic(
+        systems.double_well_ramped, np.full(120, -1.0), grid,
+        noise_std=noise, seed=29, mu_start=0.0, mu_rate=rate,
+    )
+    times = earlywarning.escape_times(run, 0.0, grid)
+    assert not np.isnan(times).any()
+    measured = MU_C - rate * float(np.median(times))
+    assert measured == pytest.approx(predicted, rel=0.15)
+    # and it really is before the fold, by much more than the sweep's own delay
+    assert measured > 5.0 * earlywarning.fold_delay(rate)
+    # the formula degrades gracefully where escape before the fold is not expected
+    assert np.isnan(earlywarning.noise_advanced_fold(0.001, 1.0))
+    with pytest.raises(ValueError):
+        earlywarning.noise_advanced_fold(0.1, 1e-4, quantile=1.0)
+

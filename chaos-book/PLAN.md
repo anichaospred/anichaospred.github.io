@@ -365,9 +365,27 @@ start and no link is dead.
     chapter 24's 8 TU. *Knob:* forcing rate, ensemble size.
 26. **Earth system prediction** — Coupled, carbon-cycle and cryosphere components;
     what "initialising" a slow component means; frontiers.
-27. **Regimes, bistability, and tipping points** — Multiple attractors; noise-induced
-    transitions; early-warning indicators and their failure modes. *Notebook:* a
-    double-well system with noise; variance and autocorrelation as warning signals.
+27. ★ **Regimes, bistability, and tipping points** — The tilted double well
+    :math:`\dot x = x - x^3 + \mu + \sigma\xi`, a gradient system, so the
+    stationary density is exactly Boltzmann (measured to 4.6 % over a factor of
+    fourteen in lobe ratio) and the fold at :math:`\mu_c = 2/(3\sqrt3)` is exact.
+    **Kramers' exponent is exact and its prefactor is not**: fitted slope 0.2333
+    against :math:`2\Delta V = 0.2350` (0.8 %), while the formula overestimates the
+    waiting *time* by 60 %; one censored noise level is kept in the figure because
+    including it biases the slope by 12.1 %. **Critical slowing down is exactly true
+    and stops working before the fold** — 3.5 % on the spread and 1.6 % on the
+    autocorrelation up to :math:`\mu = 0.25`, then 3.6× the theory at 0.32 and an
+    autocorrelation that *falls* to 0.47 against a predicted 0.96 at 0.382, because
+    the predicted fluctuation has grown to the basin width. **Two timing laws with
+    opposite signs**: a noiseless sweep leaves *late* by the Airy constant
+    :math:`1.9469\gamma^{2/3}` (measured ratio → 0.988), and noise leaves *early* by
+    a closed form good to 3.3 % across a factor of five in :math:`\sigma` — whose
+    logarithm is the whole content, since the bare :math:`\sigma^{4/3}` scaling is
+    wrong by a factor rising from 1.81 to 3.18. **Early warning has recall without
+    specificity**: calibrated to 5 % false alarms it fires on 100 % of genuine sweeps
+    with 1200 TU of lead, on 100 % of approaches that stop short and never tip, and on
+    13 % of noise-induced transitions that tip 80 % of the time. *Knob:* tilt, noise
+    amplitude. †
 
 ### Part VII — Frontiers
 
@@ -450,21 +468,18 @@ Pyodide build every reader's browser receives.
 
 | | Count |
 |---|---|
-| Chapters live | **23** (1, 4–25) |
-| Chapters stubbed | 8 |
-| `chaoslib` modules | 14 |
-| `chaoslib` tests | 280, all passing |
+| Chapters live | **24** (1, 4–25, 27) |
+| Chapters stubbed | 7 |
+| `chaoslib` modules | 15 |
+| `chaoslib` tests | 296, all passing |
 
 **Next chapters, in priority order** — each already has most of its material in hand:
 
-1. **Ch. 27** (regimes and tipping points) — a double-well with noise; variance and
-   autocorrelation as early-warning signals, and their failure modes. Largely
-   self-contained.
-2. **Ch. 26** (Earth system prediction) — the hardest of Part VI to do honestly at low
+1. **Ch. 26** (Earth system prediction) — the hardest of Part VI to do honestly at low
    order; consider what it can measure before committing to it.
-3. **Ch. 2 and 3** (Part I) — ch. 2 needs a shallow-water balance system in `chaoslib`;
+2. **Ch. 2 and 3** (Part I) — ch. 2 needs a shallow-water balance system in `chaoslib`;
    ch. 3 is mostly synthesis across systems already present.
-4. **Ch. 20's diet** — unblocked since chapter 19; see the note below.
+3. **Ch. 20's diet** — unblocked since chapter 19; see the note below.
 
 ### A second decision on record: splitting chapter 20
 
