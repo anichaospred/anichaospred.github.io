@@ -1,0 +1,1365 @@
+# /// script
+# requires-python = ">=3.11"
+# dependencies = [
+#   "marimo==0.23.9",
+#   "numpy",
+#   "scipy",
+#   "matplotlib",
+# ]
+# ///
+"""Chapter 27 -- Regimes, bistability, and tipping points.
+
+Multiple attractors, noise-induced transitions, and early-warning indicators
+measured as a detection problem rather than presented as a hope.
+
+Part VI of *An Interactive Chaos and Predictability Textbook*.
+
+Numerics come from `chaoslib`; this file holds the exposition and the figures.
+The experiments are precomputed by `scripts/generate_ch27_data.py`.
+
+To edit:   marimo edit notebooks/ch27_regimes-tipping.py
+To export: make nb-one NB=ch27_regimes-tipping
+"""
+
+import marimo
+
+__generated_with = "0.23.9"
+app = marimo.App(width="full", app_title="Chapter 27: Regimes, Bistability and Tipping Points")
+
+
+@app.cell
+async def imports():
+    import marimo as mo
+
+    import sys
+
+    if sys.platform == "emscripten":
+        import micropip
+
+        await micropip.install(
+            str(
+                mo.notebook_location()
+                / "public"
+                / "chaoslib-0.1.0-py3-none-any.whl"
+            )
+        )
+    else:
+        sys.path.insert(0, str(mo.notebook_dir().parent))
+
+    import numpy as np
+    import matplotlib.pyplot as plt
+
+    from chaoslib import earlywarning, plotting, systems
+
+    C_CONTEXT = plotting.mpl_colour(plotting.C_CONTEXT)
+    C_TRUTH = plotting.C_TRUTH
+    C_PERT = plotting.C_PERT
+    C_SPREAD = plotting.C_SPREAD
+    C_MEAN = plotting.C_MEAN
+    C_FIXED = plotting.C_FIXED
+    C_SAT = plotting.C_SAT
+    C_START = plotting.C_START
+    C_OBS = plotting.C_OBS
+    C_BG = plotting.C_BG
+    C_ANALYSIS = plotting.C_ANALYSIS
+    MPL_SEQUENTIAL = plotting.MPL_SEQUENTIAL
+    mpl_panels = plotting.mpl_panels
+    finish_mpl = plotting.finish_mpl
+
+    return (
+        C_ANALYSIS, C_BG, C_CONTEXT, C_FIXED, C_MEAN, C_OBS, C_PERT, C_SAT,
+        C_SPREAD, C_START, C_TRUTH, MPL_SEQUENTIAL, earlywarning, finish_mpl,
+        mo, mpl_panels, np, plotting, plt, systems,
+    )
+
+
+# ===========================================================================
+# Title
+# ===========================================================================
+@app.cell(hide_code=True)
+def title(mo):
+    mo.md(
+        r"""
+    # Chapter 27 · Regimes, Bistability and Tipping Points
+
+    **Part VI — Predictability of the second kind.**
+
+    **The forecasting question.** Chapter 25 offered a reassurance: when the trajectory
+    is unpredictable the statistics need not be, so a projection can be confident about
+    a distribution it cannot resolve in detail. That reassurance has a precondition —
+    that the attractor deforms *smoothly* as the forcing changes. If a slowly changing
+    parameter destroys the state the system currently occupies, the distribution moves
+    abruptly and the smooth-response picture fails exactly where it matters most.
+
+    So: **can you see a tipping point coming?**
+
+    The literature says yes in principle — a state about to be destroyed relaxes more
+    slowly, and slow relaxation shows up in a record as rising variance and rising
+    autocorrelation. This chapter builds that indicator, verifies its theory against
+    exact identities, and then does the thing the theory does not do: **runs it as a
+    detection problem with a calibrated false-alarm rate.** Two of the three scenarios
+    defeat it, and one of the two defeats it completely.
+
+    ---
+
+    **The model.** The normal form for two competing states, tilted by a parameter
+    $\mu$:
+
+    $$
+    \dot x = x - x^3 + \mu + \sigma\,\xi(t),
+    \qquad
+    V(x) = -\tfrac12 x^2 + \tfrac14 x^4 - \mu x ,
+    $$
+
+    so that $\dot x = -V'(x)$ — a ball in a double well, kicked by noise. This is the
+    least a model can contain and still tip: two stable states, a barrier, a tilt, and
+    a fold at which one state ceases to exist.
+
+    Being a *gradient* system buys two exact results that the rest of the chapter is
+    checked against — the stationary density is exactly Boltzmann,
+    $p(x) \propto e^{-2V(x)/\sigma^2}$, and the fold sits at
+    $\mu_c = 2/(3\sqrt3)$, $x_c = -1/\sqrt3$, where the right-hand side *and* its
+    derivative vanish identically.
+
+    ---
+
+    **What you need before this chapter.** **Chapter 5** for bifurcations in maps —
+    a fold is the simplest of them. **Chapter 25** for the smooth-response picture this
+    chapter puts a limit on.
+    """
+    )
+    return
+
+
+@app.cell
+def chapter_data():
+    # Precomputed by scripts/generate_ch27_data.py (~4 min): a Boltzmann
+    # density check, a Kramers escape sweep (one level deliberately left
+    # censored), variance and autocorrelation against their exact
+    # Ornstein-Uhlenbeck values, the two competing timing laws for a swept
+    # fold, and an early-warning detection experiment with a calibrated
+    # false-alarm rate.
+    # Generated by scripts/generate_ch27_data.py -- do not edit by hand.
+    # Chapter 27: bistability, tipping, and early warning.
+    MU_C = 0.384900
+    X_C = -0.577350
+    # --- 1. two states, one system ---
+    #   mu 0.00 sigma 0.45: 12M samples, right/left 1.043 vs exact 1.000
+    #   mu 0.15 sigma 0.45: 12M samples, right/left 14.248 vs exact 13.622
+    DENSITY_CASES = ((0.0, 0.45), (0.15, 0.45))
+    DENSITY_CENTRES = (
+        -1.9750, -1.9250, -1.8750, -1.8250, -1.7750, -1.7250, -1.6750, -1.6250,
+        -1.5750, -1.5250, -1.4750, -1.4250, -1.3750, -1.3250, -1.2750, -1.2250,
+        -1.1750, -1.1250, -1.0750, -1.0250, -0.9750, -0.9250, -0.8750, -0.8250,
+        -0.7750, -0.7250, -0.6750, -0.6250, -0.5750, -0.5250, -0.4750, -0.4250,
+        -0.3750, -0.3250, -0.2750, -0.2250, -0.1750, -0.1250, -0.0750, -0.0250,
+        0.0250, 0.0750, 0.1250, 0.1750, 0.2250, 0.2750, 0.3250, 0.3750,
+        0.4250, 0.4750, 0.5250, 0.5750, 0.6250, 0.6750, 0.7250, 0.7750,
+        0.8250, 0.8750, 0.9250, 0.9750, 1.0250, 1.0750, 1.1250, 1.1750,
+        1.2250, 1.2750, 1.3250, 1.3750, 1.4250, 1.4750, 1.5250, 1.5750,
+        1.6250, 1.6750, 1.7250, 1.7750, 1.8250, 1.8750, 1.9250, 1.9750,
+    )
+    DENSITY_MEASURED = (
+        0.000000, 0.000000, 0.000000, 0.000000, 0.000008, 0.000077, 0.000312, 0.001347,
+        0.004448, 0.012198, 0.028869, 0.061705, 0.115378, 0.195100, 0.299753, 0.419004,
+        0.541924, 0.649365, 0.725896, 0.766059, 0.768441, 0.732436, 0.675094, 0.603600,
+        0.526277, 0.448662, 0.377737, 0.315153, 0.260646, 0.215764, 0.179622, 0.149437,
+        0.126807, 0.109800, 0.096672, 0.087157, 0.079564, 0.074563, 0.071614, 0.070944,
+        0.070286, 0.072263, 0.073628, 0.079357, 0.086414, 0.097443, 0.111766, 0.131286,
+        0.155430, 0.185897, 0.224473, 0.271239, 0.330901, 0.398070, 0.471791, 0.552275,
+        0.636220, 0.711101, 0.767324, 0.798997, 0.793707, 0.750487, 0.673401, 0.564520,
+        0.439489, 0.317126, 0.207611, 0.121658, 0.064378, 0.030679, 0.012936, 0.004695,
+        0.001360, 0.000290, 0.000048, 0.000012, 0.000010, 0.000000, 0.000000, 0.000000,
+        0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000003, 0.000033,
+        0.000158, 0.000503, 0.001393, 0.003147, 0.006491, 0.012025, 0.020074, 0.030081,
+        0.042575, 0.055578, 0.066816, 0.076181, 0.081666, 0.084489, 0.083711, 0.080784,
+        0.075384, 0.068828, 0.061623, 0.055220, 0.048383, 0.043905, 0.039592, 0.035749,
+        0.032326, 0.031176, 0.029219, 0.028277, 0.027901, 0.028744, 0.029387, 0.030212,
+        0.032402, 0.036662, 0.042122, 0.047942, 0.057090, 0.068601, 0.084749, 0.105828,
+        0.133949, 0.172464, 0.221969, 0.289734, 0.377351, 0.486360, 0.623418, 0.791224,
+        0.974498, 1.180799, 1.378766, 1.543159, 1.654810, 1.678784, 1.608400, 1.446233,
+        1.207818, 0.930036, 0.652675, 0.417268, 0.236237, 0.121073, 0.054243, 0.021911,
+        0.007248, 0.002015, 0.000430, 0.000077, 0.000020, 0.000003, 0.000000, 0.000000,
+    )
+    DENSITY_RATIO = (
+        1.0426, 14.2481,
+    )
+    DENSITY_RATIO_EXACT = (
+        1.0000, 13.6222,
+    )
+    DENSITY_WORST_ERROR = 4.60
+    # --- 2. noise-induced transitions ---
+    #   sigma 0.20: tau   686.34 (Kramers   1890.73, ratio 0.363), escaped  84.2%  (5s)
+    #   sigma 0.22: tau   414.72 (Kramers    681.99, ratio 0.608), escaped  99.5%  (5s)
+    #   sigma 0.25: tau   136.65 (Kramers    228.05, ratio 0.599), escaped 100.0%  (5s)
+    #   sigma 0.28: tau    65.83 (Kramers    106.37, ratio 0.619), escaped 100.0%  (5s)
+    #   sigma 0.32: tau    31.90 (Kramers     52.69, ratio 0.605), escaped 100.0%  (5s)
+    #   slope all 0.20649, uncensored only 0.23326, exact 2dV = 0.23502
+    KRAMERS_MU = 0.15
+    KRAMERS_SIGMAS = (0.2, 0.22, 0.25, 0.28, 0.32)
+    KRAMERS_BARRIER = 0.117509
+    KRAMERS_WELL = -0.9143
+    KRAMERS_SADDLE = -0.1536
+    KRAMERS_TAU = (
+        686.3351, 414.7199, 136.6489, 65.8299, 31.8959,
+    )
+    KRAMERS_TAU_PREDICTED = (
+        1890.7300, 681.9873, 228.0475, 106.3722, 52.6867,
+    )
+    KRAMERS_ESCAPED = (
+        0.8425, 0.9950, 1.0000, 1.0000, 1.0000,
+    )
+    KRAMERS_SLOPE_ALL = 0.206493
+    KRAMERS_SLOPE_CLEAN = 0.233255
+    KRAMERS_SLOPE_EXACT = 0.235018
+    KRAMERS_SLOPE_BIAS = 12.1
+    KRAMERS_SLOPE_ERROR = 0.8
+    KRAMERS_PREFACTOR_RATIO = 0.608
+    # --- 3. critical slowing down ---
+    #   mu 0.000 lam -2.0000  sd 0.0406 (OU 0.0400)  ac 0.6094 (OU 0.6065)  escaped   0.0%  basin 1.0000
+    #   mu 0.150 lam -1.5078  sd 0.0470 (OU 0.0461)  ac 0.6918 (OU 0.6859)  escaped   0.0%  basin 0.7607
+    #   mu 0.250 lam -1.1045  sd 0.0557 (OU 0.0538)  ac 0.7707 (OU 0.7587)  escaped   0.0%  basin 0.5680
+    #   mu 0.320 lam -0.7392  sd 0.2381 (OU 0.0658)  ac 0.8829 (OU 0.8313)  escaped  46.0%  basin 0.3903
+    #   mu 0.360 lam -0.4425  sd 0.0989 (OU 0.0850)  ac 0.5587 (OU 0.8953)  escaped 100.0%  basin 0.2405
+    #   mu 0.375 lam -0.2729  sd 0.0347 (OU 0.1083)  ac 0.4798 (OU 0.9340)  escaped 100.0%  basin 0.1514
+    #   mu 0.382 lam -0.1450  sd 0.0332 (OU 0.1485)  ac 0.4731 (OU 0.9644)  escaped 100.0%  basin 0.0819
+    CSD_MUS = (0.0, 0.15, 0.25, 0.32, 0.36, 0.375, 0.382)
+    CSD_SIGMA = 0.08
+    CSD_SAMPLE = 0.25
+    CSD_RATE = (
+        -2.000000, -1.507819, -1.104548, -0.739150, -0.442512, -0.272918, -0.145032,
+    )
+    CSD_SD_PREDICTED = (
+        0.040000, 0.046068, 0.053825, 0.065797, 0.085038, 0.108283, 0.148540,
+    )
+    CSD_SD = (
+        0.040601, 0.046955, 0.055729, 0.238098, 0.098893, 0.034681, 0.033205,
+    )
+    CSD_AC_PREDICTED = (
+        0.606531, 0.685947, 0.758709, 0.831281, 0.895272, 0.934046, 0.964392,
+    )
+    CSD_AC = (
+        0.609419, 0.691835, 0.770664, 0.882908, 0.558671, 0.479826, 0.473121,
+    )
+    CSD_ESCAPED = (
+        0.0000, 0.0000, 0.0000, 0.4600, 1.0000, 1.0000, 1.0000,
+    )
+    CSD_BASIN = (
+        1.000000, 0.760672, 0.567971, 0.390281, 0.240529, 0.151388, 0.081868,
+    )
+    CSD_CLEAN_MU_MAX = 0.250
+    CSD_CLEAN_WORST = 3.5
+    CSD_CLEAN_WORST_AC = 1.6
+    # --- 4a. the deterministic delay past a fold ---
+    #   rate  0.004000: mu_tip 0.43129, delay +0.04639, delay/law 0.9456
+    #   rate  0.002000: mu_tip 0.41461, delay +0.02971, delay/law 0.9613
+    #   rate  0.001000: mu_tip 0.40385, delay +0.01895, delay/law 0.9731
+    #   rate  0.000500: mu_tip 0.39694, delay +0.01204, delay/law 0.9819
+    #   rate  0.000250: mu_tip 0.39254, delay +0.00764, delay/law 0.9882
+    DELAY_RATES = (0.004, 0.002, 0.001, 0.0005, 0.00025)
+    DELAY_MU = (
+        0.431292, 0.414610, 0.403845, 0.396943, 0.392535,
+    )
+    DELAY = (
+        0.046391, 0.029710, 0.018945, 0.012043, 0.007635,
+    )
+    DELAY_RATIO = (
+        0.9456, 0.9613, 0.9731, 0.9819, 0.9882,
+    )
+    DELAY_LAW_CONSTANT = 1.9469
+    DELAY_BEST_RATIO = 0.9882
+    # --- 4b. the noise advance before a fold ---
+    #   sigma 0.04: gap 0.01546, closed form 0.01592 (ratio 0.971), bare sigma^4/3 0.00854 (ratio 1.810)  (34s)
+    #   sigma 0.06: gap 0.03205, closed form 0.03287 (ratio 0.975), bare sigma^4/3 0.01467 (ratio 2.185)  (35s)
+    #   sigma 0.09: gap 0.06306, closed form 0.06521 (ratio 0.967), bare sigma^4/3 0.02519 (ratio 2.504)  (34s)
+    #   sigma 0.13: gap 0.11543, closed form 0.11866 (ratio 0.973), bare sigma^4/3 0.04113 (ratio 2.807)  (34s)
+    #   sigma 0.19: gap 0.21661, closed form 0.21665 (ratio 1.000), bare sigma^4/3 0.06821 (ratio 3.175)  (34s)
+    #   fitted exponent 1.687 against 4/3 = 1.333
+    ADVANCE_SIGMAS = (0.04, 0.06, 0.09, 0.13, 0.19)
+    ADVANCE_RATE = 2.5e-05
+    ADVANCE_GAP = (
+        0.015461, 0.032053, 0.063061, 0.115429, 0.216607,
+    )
+    ADVANCE_PREDICTED = (
+        0.015919, 0.032873, 0.065210, 0.118665, 0.216648,
+    )
+    ADVANCE_NAIVE = (
+        0.008543, 0.014669, 0.025188, 0.041127, 0.068215,
+    )
+    ADVANCE_EXPONENT = 1.687
+    ADVANCE_WORST = 3.3
+    ADVANCE_NAIVE_LOW = 1.81
+    ADVANCE_NAIVE_HIGH = 3.18
+    ADVANCE_DELAY_AT_RATE = 0.001665
+    # --- 5. early warning as a detection problem ---
+    #     null: tipped   0.0%, median tau(var)  0.024, tau(ac)  0.030  (6s)
+    #     ramp: tipped 100.0%, median tau(var)  0.815, tau(ac)  0.525  (6s)
+    #    short: tipped   0.0%, median tau(var)  0.763, tau(ac)  0.515  (6s)
+    #    noise: tipped  79.5%, median tau(var)  0.005, tau(ac)  0.002  (5s)
+    #   variance: threshold 0.326 -> alarms null 5.0%, ramp 100.0%, short 100.0%, noise 13.0%
+    #   autocorrelation: threshold 0.339 -> alarms null 5.0%, ramp 89.0%, short 89.5%, noise 17.5%
+    #   lead (TU) -> alarm rate: 0:100.0%, 200:100.0%, 400:100.0%, 800:99.5%, 1200:94.0%, 1600:87.0%, 2000:70.0%
+    #   example member 175: tips at 3614 TU (mu 0.3614), 161 windows
+    EWS_RATE = 0.0001
+    EWS_SIGMA = 0.06
+    EWS_SAMPLE = 2.0
+    EWS_WIDTH = 200
+    EWS_HOLD = 0.3
+    EWS_NOISE_MU = 0.25
+    EWS_NOISE_SIGMA = 0.13
+    EWS_FALSE_ALARM = 5.0
+    EWS_LEADS = (0.0, 200.0, 400.0, 800.0, 1200.0, 1600.0, 2000.0)
+    EWS_SCENARIOS = ('null', 'ramp', 'short', 'noise')
+    EWS_TIPPED = (
+        0.0000, 1.0000, 0.0000, 0.7950,
+    )
+    EWS_THRESHOLD_VAR = 0.3259
+    EWS_MEDIAN_TAU_VAR = (
+        0.0239, 0.8147, 0.7625, 0.0054,
+    )
+    EWS_ALARM_VAR = (
+        0.0500, 1.0000, 1.0000, 0.1300,
+    )
+    EWS_THRESHOLD_AC = 0.3389
+    EWS_MEDIAN_TAU_AC = (
+        0.0296, 0.5254, 0.5150, 0.0022,
+    )
+    EWS_ALARM_AC = (
+        0.0500, 0.8900, 0.8950, 0.1750,
+    )
+    EWS_LEAD_ALARM = (
+        1.0000, 1.0000, 1.0000, 0.9950, 0.9400, 0.8700, 0.7000,
+    )
+    EWS_MEDIAN_TIP = 3615.0
+    EWS_MEDIAN_TIP_MU = 0.3615
+    EWS_FOLD_TIME = 3849.0
+    EWS_PREDICTED_MU = 0.3619
+    EWS_EXAMPLE_TIME = (
+        0.00, 10.00, 20.00, 30.00, 40.00, 50.00, 60.00, 70.00,
+        80.00, 90.00, 100.00, 110.00, 120.00, 130.00, 140.00, 150.00,
+        160.00, 170.00, 180.00, 190.00, 200.00, 210.00, 220.00, 230.00,
+        240.00, 250.00, 260.00, 270.00, 280.00, 290.00, 300.00, 310.00,
+        320.00, 330.00, 340.00, 350.00, 360.00, 370.00, 380.00, 390.00,
+        400.00, 410.00, 420.00, 430.00, 440.00, 450.00, 460.00, 470.00,
+        480.00, 490.00, 500.00, 510.00, 520.00, 530.00, 540.00, 550.00,
+        560.00, 570.00, 580.00, 590.00, 600.00, 610.00, 620.00, 630.00,
+        640.00, 650.00, 660.00, 670.00, 680.00, 690.00, 700.00, 710.00,
+        720.00, 730.00, 740.00, 750.00, 760.00, 770.00, 780.00, 790.00,
+        800.00, 810.00, 820.00, 830.00, 840.00, 850.00, 860.00, 870.00,
+        880.00, 890.00, 900.00, 910.00, 920.00, 930.00, 940.00, 950.00,
+        960.00, 970.00, 980.00, 990.00, 1000.00, 1010.00, 1020.00, 1030.00,
+        1040.00, 1050.00, 1060.00, 1070.00, 1080.00, 1090.00, 1100.00, 1110.00,
+        1120.00, 1130.00, 1140.00, 1150.00, 1160.00, 1170.00, 1180.00, 1190.00,
+        1200.00, 1210.00, 1220.00, 1230.00, 1240.00, 1250.00, 1260.00, 1270.00,
+        1280.00, 1290.00, 1300.00, 1310.00, 1320.00, 1330.00, 1340.00, 1350.00,
+        1360.00, 1370.00, 1380.00, 1390.00, 1400.00, 1410.00, 1420.00, 1430.00,
+        1440.00, 1450.00, 1460.00, 1470.00, 1480.00, 1490.00, 1500.00, 1510.00,
+        1520.00, 1530.00, 1540.00, 1550.00, 1560.00, 1570.00, 1580.00, 1590.00,
+        1600.00, 1610.00, 1620.00, 1630.00, 1640.00, 1650.00, 1660.00, 1670.00,
+        1680.00, 1690.00, 1700.00, 1710.00, 1720.00, 1730.00, 1740.00, 1750.00,
+        1760.00, 1770.00, 1780.00, 1790.00, 1800.00, 1810.00, 1820.00, 1830.00,
+        1840.00, 1850.00, 1860.00, 1870.00, 1880.00, 1890.00, 1900.00, 1910.00,
+        1920.00, 1930.00, 1940.00, 1950.00, 1960.00, 1970.00, 1980.00, 1990.00,
+        2000.00, 2010.00, 2020.00, 2030.00, 2040.00, 2050.00, 2060.00, 2070.00,
+        2080.00, 2090.00, 2100.00, 2110.00, 2120.00, 2130.00, 2140.00, 2150.00,
+        2160.00, 2170.00, 2180.00, 2190.00, 2200.00, 2210.00, 2220.00, 2230.00,
+        2240.00, 2250.00, 2260.00, 2270.00, 2280.00, 2290.00, 2300.00, 2310.00,
+        2320.00, 2330.00, 2340.00, 2350.00, 2360.00, 2370.00, 2380.00, 2390.00,
+        2400.00, 2410.00, 2420.00, 2430.00, 2440.00, 2450.00, 2460.00, 2470.00,
+        2480.00, 2490.00, 2500.00, 2510.00, 2520.00, 2530.00, 2540.00, 2550.00,
+        2560.00, 2570.00, 2580.00, 2590.00, 2600.00, 2610.00, 2620.00, 2630.00,
+        2640.00, 2650.00, 2660.00, 2670.00, 2680.00, 2690.00, 2700.00, 2710.00,
+        2720.00, 2730.00, 2740.00, 2750.00, 2760.00, 2770.00, 2780.00, 2789.99,
+        2799.99, 2809.99, 2819.99, 2829.99, 2839.99, 2849.99, 2859.99, 2869.99,
+        2879.99, 2889.99, 2899.99, 2909.99, 2919.99, 2929.99, 2939.99, 2949.99,
+        2959.99, 2969.99, 2979.99, 2989.99, 2999.99, 3009.99, 3019.99, 3029.99,
+        3039.99, 3049.99, 3059.99, 3069.99, 3079.99, 3089.99, 3099.99, 3109.99,
+        3119.99, 3129.99, 3139.99, 3149.99, 3159.99, 3169.99, 3179.99, 3189.99,
+        3199.99, 3209.99, 3219.99, 3229.99, 3239.99, 3249.99, 3259.99, 3269.99,
+        3279.99, 3289.99, 3299.99, 3309.99, 3319.99, 3329.99, 3339.99, 3349.99,
+        3359.99, 3369.99, 3379.99, 3389.99, 3399.99, 3409.99, 3419.99, 3429.99,
+        3439.99, 3449.99, 3459.99, 3469.99, 3479.99, 3489.99, 3499.99, 3509.99,
+        3519.99, 3529.99, 3539.99, 3549.99, 3559.99, 3569.99, 3579.99, 3589.99,
+        3599.99, 3609.99,
+    )
+    EWS_EXAMPLE_X = (
+        -1.0000, -1.0302, -1.0267, -0.9945, -1.0042, -0.9767, -0.9826, -1.0333,
+        -1.0155, -1.0049, -0.9610, -1.0124, -0.9886, -1.0242, -0.9813, -0.9923,
+        -1.0095, -1.0793, -0.9689, -1.0215, -0.9547, -1.0088, -0.9413, -0.9540,
+        -0.9925, -0.9792, -0.9832, -0.9940, -0.9378, -0.9551, -1.0042, -0.9413,
+        -1.0377, -0.9898, -1.0166, -0.9981, -0.9849, -1.0013, -1.0251, -1.0119,
+        -0.9659, -0.9780, -0.9649, -0.9618, -0.9864, -0.9915, -0.9911, -1.0122,
+        -0.9629, -0.9551, -0.9402, -0.9475, -0.9490, -0.9858, -0.9841, -0.9950,
+        -1.0209, -0.8984, -0.9897, -0.9694, -1.0172, -0.9654, -0.9317, -0.9845,
+        -0.9282, -0.9639, -0.9273, -0.8773, -0.9923, -0.9554, -0.9349, -0.9950,
+        -1.0473, -0.9898, -0.9630, -0.9202, -0.9272, -0.9025, -0.9648, -0.9244,
+        -0.9182, -0.9402, -0.9538, -0.9207, -0.9539, -0.9474, -0.9936, -0.9207,
+        -0.9674, -1.0132, -0.9380, -0.9731, -0.9755, -0.9926, -0.9400, -0.9583,
+        -0.9527, -0.9381, -0.9621, -0.9647, -0.9563, -0.9738, -0.9390, -0.9294,
+        -0.9109, -0.9346, -0.9388, -0.9183, -0.9633, -0.9050, -0.9282, -0.9553,
+        -0.9051, -0.9191, -0.8695, -0.8790, -0.9690, -0.8775, -0.9553, -0.8834,
+        -0.9448, -0.9188, -0.9084, -0.9471, -0.8246, -0.9431, -0.9311, -0.9509,
+        -0.9736, -0.9218, -0.9575, -0.9316, -0.9313, -0.8818, -0.9224, -1.0011,
+        -0.9143, -0.8910, -0.8997, -0.9087, -0.9487, -1.0019, -0.8840, -0.8790,
+        -0.8678, -0.8447, -0.8835, -0.8598, -0.8816, -0.8744, -0.9468, -0.9935,
+        -0.8628, -0.8999, -0.9049, -0.8732, -0.9040, -0.9200, -0.9208, -0.9488,
+        -0.8928, -0.9949, -0.9731, -0.8481, -0.8893, -0.8887, -0.9196, -0.9171,
+        -0.8420, -0.9043, -0.9320, -0.8547, -0.9043, -0.9654, -0.9067, -0.8306,
+        -0.9204, -0.8938, -0.9034, -0.8918, -0.8858, -0.8814, -0.9429, -0.8548,
+        -0.9332, -0.8706, -0.7958, -0.9336, -0.8963, -0.9034, -0.8840, -0.8816,
+        -0.9343, -0.8925, -0.8659, -0.8393, -0.8991, -0.8536, -0.8940, -0.9049,
+        -0.9147, -0.8415, -0.8668, -0.8641, -0.9261, -0.8437, -0.9735, -0.8767,
+        -0.9157, -0.8583, -0.8666, -0.9106, -0.8850, -0.8328, -0.8199, -0.8199,
+        -0.8963, -0.8771, -0.8884, -0.9109, -0.8350, -0.8163, -0.8205, -0.8696,
+        -0.8789, -0.9691, -0.8093, -0.9022, -0.8824, -0.8161, -0.8513, -0.9190,
+        -0.9136, -0.8565, -0.8320, -0.8317, -0.8623, -0.7966, -0.7566, -0.8341,
+        -0.9120, -0.8577, -0.8938, -0.8738, -0.8574, -0.7712, -0.7469, -0.8473,
+        -0.8031, -0.8392, -0.8836, -0.8258, -0.8571, -0.8726, -0.7967, -0.8189,
+        -0.8210, -0.7243, -0.8740, -0.8678, -0.8452, -0.8451, -0.8291, -0.8159,
+        -0.7901, -0.8816, -0.8326, -0.8109, -0.8035, -0.8580, -0.8220, -0.8111,
+        -0.8870, -0.7868, -0.8446, -0.8211, -0.7922, -0.8135, -0.7144, -0.7928,
+        -0.7957, -0.8321, -0.8289, -0.8149, -0.7736, -0.8044, -0.8040, -0.8793,
+        -0.7810, -0.7420, -0.8076, -0.8132, -0.8696, -0.8324, -0.8385, -0.7760,
+        -0.7553, -0.8340, -0.8046, -0.6898, -0.7693, -0.7914, -0.7402, -0.8101,
+        -0.6540, -0.7300, -0.7934, -0.7484, -0.7945, -0.8062, -0.7818, -0.7609,
+        -0.8200, -0.7660, -0.7221, -0.7616, -0.8549, -0.7436, -0.6869, -0.7774,
+        -0.7464, -0.7579, -0.7858, -0.7531, -0.7178, -0.6246, -0.5623, -0.7418,
+        -0.7659, -0.5295, -0.7592, -0.7591, -0.7597, -0.7539, -0.6551, -0.7290,
+        -0.7239, -0.5761, -0.7655, -0.7034, -0.6702, -0.7230, -0.6705, -0.8763,
+        -0.7819, -0.7810, -0.7847, -0.7375, -0.5897, -0.6735, -0.4901, -0.6736,
+        -0.6412, -0.7264, -0.7529, -0.7043, -0.7306, -0.6666, -0.7273, -0.7254,
+        -0.5209, -0.3516,
+    )
+    EWS_EXAMPLE_TIP = (
+        3613.99,
+    )
+    EWS_EXAMPLE_CENTRES = (
+        199.00, 219.00, 239.00, 259.00, 279.00, 299.00, 319.00, 339.00,
+        359.00, 379.00, 399.00, 419.00, 439.00, 459.00, 479.00, 499.00,
+        519.00, 539.00, 559.00, 579.00, 599.00, 619.00, 639.00, 659.00,
+        679.00, 699.00, 719.00, 739.00, 759.00, 779.00, 799.00, 819.00,
+        839.00, 859.00, 879.00, 899.00, 919.00, 939.00, 959.00, 979.00,
+        999.00, 1019.00, 1039.00, 1059.00, 1079.00, 1099.00, 1119.00, 1139.00,
+        1159.00, 1179.00, 1199.00, 1219.00, 1239.00, 1259.00, 1279.00, 1299.00,
+        1319.00, 1339.00, 1359.00, 1379.00, 1399.00, 1419.00, 1439.00, 1459.00,
+        1479.00, 1499.00, 1519.00, 1539.00, 1559.00, 1579.00, 1599.00, 1619.00,
+        1639.00, 1659.00, 1679.00, 1699.00, 1719.00, 1739.00, 1759.00, 1779.00,
+        1799.00, 1819.00, 1839.00, 1859.00, 1879.00, 1899.00, 1919.00, 1939.00,
+        1959.00, 1979.00, 1999.00, 2019.00, 2039.00, 2059.00, 2079.00, 2099.00,
+        2119.00, 2139.00, 2159.00, 2179.00, 2199.00, 2219.00, 2239.00, 2259.00,
+        2279.00, 2299.00, 2319.00, 2339.00, 2359.00, 2379.00, 2399.00, 2419.00,
+        2439.00, 2459.00, 2479.00, 2499.00, 2519.00, 2539.00, 2559.00, 2579.00,
+        2599.00, 2619.00, 2639.00, 2659.00, 2679.00, 2699.00, 2719.00, 2739.00,
+        2759.00, 2779.00, 2799.00, 2819.00, 2839.00, 2859.00, 2879.00, 2899.00,
+        2919.00, 2939.00, 2959.00, 2979.00, 2999.00, 3019.00, 3039.00, 3059.00,
+        3079.00, 3099.00, 3119.00, 3139.00, 3159.00, 3179.00, 3199.00, 3219.00,
+        3239.00, 3259.00, 3279.00, 3299.00, 3319.00, 3339.00, 3359.00, 3379.00,
+        3399.00,
+    )
+    EWS_EXAMPLE_VARIANCE = (
+        1.055576e-03, 1.035897e-03, 1.028585e-03, 1.047862e-03, 1.066731e-03, 1.061578e-03, 1.059991e-03, 1.059150e-03,
+        1.067188e-03, 1.085971e-03, 1.002584e-03, 1.004968e-03, 1.005213e-03, 1.006683e-03, 1.024612e-03, 9.808067e-04,
+        9.849023e-04, 1.051022e-03, 1.064602e-03, 1.076445e-03, 1.086034e-03, 1.107203e-03, 1.160179e-03, 1.193609e-03,
+        1.177403e-03, 1.236513e-03, 1.286062e-03, 1.271804e-03, 1.218641e-03, 1.193650e-03, 1.167904e-03, 1.136863e-03,
+        1.127096e-03, 1.132140e-03, 1.096684e-03, 1.095229e-03, 1.111348e-03, 1.048400e-03, 1.136300e-03, 1.162831e-03,
+        1.116265e-03, 1.120579e-03, 1.111198e-03, 1.130836e-03, 1.129712e-03, 1.078052e-03, 1.051212e-03, 1.059486e-03,
+        1.096806e-03, 1.085939e-03, 1.124603e-03, 1.140874e-03, 1.164578e-03, 1.194071e-03, 1.227621e-03, 1.276625e-03,
+        1.322835e-03, 1.344455e-03, 1.242869e-03, 1.203554e-03, 1.233206e-03, 1.341266e-03, 1.403344e-03, 1.357720e-03,
+        1.373643e-03, 1.461918e-03, 1.457379e-03, 1.497444e-03, 1.475565e-03, 1.469616e-03, 1.444603e-03, 1.431790e-03,
+        1.450178e-03, 1.439314e-03, 1.478613e-03, 1.470185e-03, 1.430182e-03, 1.399735e-03, 1.519426e-03, 1.590035e-03,
+        1.556307e-03, 1.459700e-03, 1.370817e-03, 1.389652e-03, 1.438904e-03, 1.344520e-03, 1.436210e-03, 1.446545e-03,
+        1.466651e-03, 1.501801e-03, 1.529888e-03, 1.567901e-03, 1.556742e-03, 1.600762e-03, 1.532670e-03, 1.567869e-03,
+        1.627724e-03, 1.711024e-03, 1.711307e-03, 1.667788e-03, 1.695178e-03, 1.710091e-03, 1.737869e-03, 1.755987e-03,
+        1.735240e-03, 1.871731e-03, 1.816744e-03, 1.781660e-03, 1.815844e-03, 1.846206e-03, 1.860249e-03, 1.836041e-03,
+        1.840933e-03, 1.779027e-03, 1.763286e-03, 1.763636e-03, 1.742272e-03, 1.694216e-03, 1.714658e-03, 1.721769e-03,
+        1.739866e-03, 1.743662e-03, 1.738614e-03, 1.780114e-03, 1.758461e-03, 1.700343e-03, 1.751539e-03, 1.768121e-03,
+        1.723656e-03, 1.730441e-03, 1.785709e-03, 1.850145e-03, 1.913809e-03, 2.112408e-03, 2.193521e-03, 2.232417e-03,
+        2.154507e-03, 2.308381e-03, 2.206438e-03, 2.293216e-03, 2.304341e-03, 2.259433e-03, 2.283892e-03, 2.405444e-03,
+        2.826276e-03, 3.031424e-03, 3.093174e-03, 3.208704e-03, 3.262300e-03, 3.364504e-03, 3.348758e-03, 3.246780e-03,
+        3.336858e-03, 3.212811e-03, 3.272494e-03, 3.300961e-03, 3.968253e-03, 3.845893e-03, 3.942527e-03, 4.267551e-03,
+        4.297449e-03,
+    )
+    EWS_EXAMPLE_AC = (
+        0.0549, 0.0497, 0.0487, 0.0676, 0.0648, 0.0579, 0.0558, 0.0465,
+        0.0358, 0.0028, -0.0223, -0.0320, -0.0888, -0.1051, -0.1181, -0.1271,
+        -0.1227, -0.1466, -0.1367, -0.1594, -0.1550, -0.1711, -0.1727, -0.1980,
+        -0.1923, -0.1777, -0.1835, -0.1492, -0.1468, -0.1539, -0.1339, -0.1434,
+        -0.1357, -0.0707, -0.0574, -0.0510, -0.0635, -0.0402, -0.0885, -0.0518,
+        -0.0879, -0.0631, -0.0583, -0.0653, -0.0623, -0.0582, -0.0238, -0.0370,
+        -0.0407, -0.0304, -0.0680, -0.0673, -0.0424, -0.0015, -0.0032, -0.0169,
+        -0.0230, -0.0149, 0.0350, 0.0108, 0.0257, 0.0369, 0.0137, 0.0310,
+        0.0442, 0.0388, 0.0206, 0.0037, 0.0013, 0.0008, 0.0291, 0.0177,
+        0.0012, -0.0268, -0.0105, -0.0091, 0.0097, -0.0061, 0.0390, 0.0479,
+        0.0759, 0.0674, 0.0704, 0.0652, 0.0367, 0.0261, 0.0381, 0.0570,
+        0.0628, 0.0356, 0.0402, 0.0651, 0.0617, 0.0333, 0.0011, -0.0032,
+        0.0208, 0.0786, 0.0868, 0.0993, 0.0902, 0.1369, 0.1214, 0.1307,
+        0.1732, 0.1705, 0.1805, 0.1679, 0.1639, 0.1893, 0.1665, 0.1598,
+        0.1519, 0.1869, 0.1897, 0.2169, 0.2008, 0.1791, 0.1277, 0.1224,
+        0.1256, 0.1033, 0.1322, 0.1377, 0.1222, 0.1078, 0.1154, 0.1315,
+        0.1341, 0.1158, 0.1629, 0.1793, 0.2027, 0.1790, 0.1599, 0.1715,
+        0.1493, 0.1775, 0.1899, 0.2193, 0.1996, 0.1831, 0.1932, 0.2305,
+        0.3267, 0.3327, 0.3283, 0.3518, 0.3553, 0.3583, 0.3647, 0.3581,
+        0.3575, 0.3833, 0.3990, 0.3846, 0.4578, 0.4487, 0.4274, 0.4379,
+        0.4378,
+    )
+
+    return (
+        ADVANCE_DELAY_AT_RATE, ADVANCE_EXPONENT, ADVANCE_GAP, ADVANCE_NAIVE,
+        ADVANCE_NAIVE_HIGH, ADVANCE_NAIVE_LOW, ADVANCE_PREDICTED,
+        ADVANCE_RATE, ADVANCE_SIGMAS, ADVANCE_WORST, CSD_AC, CSD_AC_PREDICTED,
+        CSD_BASIN, CSD_CLEAN_MU_MAX, CSD_CLEAN_WORST, CSD_CLEAN_WORST_AC,
+        CSD_ESCAPED, CSD_MUS, CSD_RATE, CSD_SAMPLE, CSD_SD, CSD_SD_PREDICTED,
+        CSD_SIGMA, DELAY, DELAY_BEST_RATIO, DELAY_LAW_CONSTANT, DELAY_MU,
+        DELAY_RATES, DELAY_RATIO, DENSITY_CASES, DENSITY_CENTRES,
+        DENSITY_MEASURED, DENSITY_RATIO, DENSITY_RATIO_EXACT,
+        DENSITY_WORST_ERROR, EWS_ALARM_AC, EWS_ALARM_VAR, EWS_EXAMPLE_AC,
+        EWS_EXAMPLE_CENTRES, EWS_EXAMPLE_TIME, EWS_EXAMPLE_TIP,
+        EWS_EXAMPLE_VARIANCE, EWS_EXAMPLE_X, EWS_FALSE_ALARM, EWS_FOLD_TIME,
+        EWS_HOLD, EWS_LEADS, EWS_LEAD_ALARM, EWS_MEDIAN_TAU_AC,
+        EWS_MEDIAN_TAU_VAR, EWS_MEDIAN_TIP, EWS_MEDIAN_TIP_MU, EWS_NOISE_MU,
+        EWS_NOISE_SIGMA, EWS_PREDICTED_MU, EWS_RATE, EWS_SAMPLE,
+        EWS_SCENARIOS, EWS_SIGMA, EWS_THRESHOLD_AC, EWS_THRESHOLD_VAR,
+        EWS_TIPPED, EWS_WIDTH, KRAMERS_BARRIER, KRAMERS_ESCAPED, KRAMERS_MU,
+        KRAMERS_PREFACTOR_RATIO, KRAMERS_SADDLE, KRAMERS_SIGMAS,
+        KRAMERS_SLOPE_ALL, KRAMERS_SLOPE_BIAS, KRAMERS_SLOPE_CLEAN,
+        KRAMERS_SLOPE_ERROR, KRAMERS_SLOPE_EXACT, KRAMERS_TAU,
+        KRAMERS_TAU_PREDICTED, KRAMERS_WELL, MU_C, X_C,
+    )
+
+
+# ===========================================================================
+# Section 1
+# ===========================================================================
+@app.cell(hide_code=True)
+def s1_md(mo):
+    mo.md(
+        r"""
+    ## 1 · Two states, one system
+
+    Start with what bistability *is*. Below, the potential $V$ for a tilt you choose,
+    with the fixed points marked: two minima and a saddle between them while
+    $|\mu| < \mu_c$, and **one** minimum beyond. The count is the whole diagnostic —
+    a system with one fixed point has nothing to tip from.
+
+    Push the tilt towards $\mu_c = 2/(3\sqrt3) \approx 0.385$ and watch the left well
+    and the saddle move towards each other. They meet at $x_c = -1/\sqrt3$, and past
+    that the left state is simply gone.
+    """
+    )
+    return
+
+
+@app.cell(hide_code=True)
+def s1_controls(mo):
+    mu_pick = mo.ui.slider(
+        start=0.0, stop=0.45, step=0.005, value=0.05, label="tilt $\\mu$",
+        show_value=True,
+    )
+    sigma_pick = mo.ui.slider(
+        start=0.05, stop=0.50, step=0.01, value=0.30,
+        label="noise $\\sigma$", show_value=True,
+    )
+    mo.hstack([mu_pick, sigma_pick], justify="start", gap=2)
+    return mu_pick, sigma_pick
+
+
+@app.cell(hide_code=True)
+def s1_fig(
+    C_BG, C_FIXED, C_OBS, C_PERT, C_TRUTH, MU_C, X_C, finish_mpl, mpl_panels,
+    mu_pick, np, sigma_pick, systems,
+):
+    _mu, _sigma = float(mu_pick.value), float(sigma_pick.value)
+    _x = np.linspace(-1.8, 1.8, 601)
+    _V = systems.double_well_potential(_x, _mu)
+    _points = systems.double_well_fixed_points(_mu)
+
+    _fig, (_ax0, _ax1) = mpl_panels(
+        ncols=2,
+        titles=("The potential and its states",
+                "Where the system is found, in the long run"),
+        figsize=(10.2, 4.0),
+    )
+    _ax0.plot(_x, _V, "-", color=C_TRUTH, linewidth=2.5)
+    for _i, _p in enumerate(_points):
+        _stable = (1.0 - 3.0 * _p**2) < 0.0
+        _ax0.plot(
+            [_p], [systems.double_well_potential(_p, _mu)],
+            "o" if _stable else "s",
+            color=C_FIXED if _stable else C_PERT,
+            markersize=10 if _stable else 8,
+            label=("stable state" if _stable else "saddle") if _i < 2 else None,
+        )
+    _ax0.axvline(X_C, color=C_BG, linestyle=":", linewidth=1.4)
+    _ax0.text(X_C, _V.min(), " $x_c$", fontsize=9, color=C_BG, va="bottom")
+    _ax0.set_xlabel("$x$")
+    _ax0.set_ylabel("$V(x)$")
+    _ax0.legend(fontsize=8.5, framealpha=0.9, loc="upper right")
+
+    # The Boltzmann density is a closed form, so it can be drawn live.
+    _p = np.exp(-2.0 * (_V - _V.min()) / _sigma**2)
+    _p = _p / np.trapezoid(_p, _x)
+    _ax1.fill_between(_x, 1e-8, _p, color=C_OBS, alpha=0.35)
+    _ax1.semilogy(_x, _p, "-", color=C_OBS, linewidth=2.2)
+    _ax1.set_ylim(max(_p.max() * 1e-7, 1e-9), _p.max() * 3.0)
+    _ax1.set_xlabel("$x$")
+    _ax1.set_ylabel("stationary density (log)")
+    finish_mpl(
+        _fig,
+        f"$\\mu = {_mu:.3f}$, $\\mu_c = {MU_C:.3f}$"
+        + ("" if _points.size == 3 else "  —  past the fold: one state left"),
+    )
+    return
+
+
+@app.cell(hide_code=True)
+def s1_note(MU_C, mo, mu_pick, sigma_pick, systems):
+    _mu, _sigma = float(mu_pick.value), float(sigma_pick.value)
+    _points = systems.double_well_fixed_points(_mu)
+    _barrier = systems.double_well_barrier(_mu)
+    _rate = systems.double_well_restoring_rate(_mu)
+    if _points.size == 3:
+        _state = (
+            f"three fixed points at ${_points[0]:.3f}$, ${_points[1]:.3f}$ and "
+            f"${_points[2]:.3f}$; the barrier out of the left well is "
+            f"$\\Delta V = {_barrier:.4f}$ and its restoring rate is "
+            f"$\\lambda = {_rate:.3f}$"
+        )
+    else:
+        _state = (
+            f"one fixed point, at ${_points[0]:.3f}$ — the tilt is past the fold and "
+            "the left state does not exist"
+        )
+    mo.md(
+        rf"""
+    At $\mu = {_mu:.3f}$: {_state}.
+
+    The right-hand panel is not a histogram of a simulation — it is the closed-form
+    stationary density $p \propto e^{{-2V/\sigma^2}}$, which a gradient system with
+    additive noise satisfies exactly. Two things are worth noticing in it.
+
+    First, **the noise decides which state matters**, not the potential alone. At small
+    $\sigma$ the density is two narrow spikes and the system stays where it started for
+    a very long time. At large $\sigma$ it is one broad hump and "which state the system
+    is in" stops being a useful description at all.
+
+    Second, the density knows nothing about *when*. It is the same distribution whether
+    the system crosses between wells once a decade or a thousand times. Timing is a
+    separate calculation, and it is the next section.
+    """
+    )
+    return
+
+
+@app.cell(hide_code=True)
+def s1_check(
+    C_OBS, C_TRUTH, DENSITY_CASES, DENSITY_CENTRES, DENSITY_MEASURED,
+    DENSITY_RATIO, DENSITY_RATIO_EXACT, DENSITY_WORST_ERROR, finish_mpl,
+    mo, mpl_panels, np, systems,
+):
+    _centres = np.asarray(DENSITY_CENTRES)
+    _measured = np.asarray(DENSITY_MEASURED).reshape(len(DENSITY_CASES), -1)
+    _fine = np.linspace(-2.0, 2.0, 601)
+    _fig, _axes = mpl_panels(
+        ncols=len(DENSITY_CASES),
+        titles=tuple(
+            f"$\\mu = {_m:g}$, $\\sigma = {_s:g}$" for _m, _s in DENSITY_CASES
+        ),
+        figsize=(10.2, 3.8),
+    )
+    for _ax, (_m, _s), _row in zip(_axes, DENSITY_CASES, _measured):
+        _weight = np.exp(
+            -2.0 * systems.double_well_potential(_fine, _m) / _s**2
+        )
+        _weight = _weight / np.trapezoid(_weight, _fine)
+        _ax.plot(_centres, _row, "o", color=C_OBS, markersize=3.5,
+                 label="12M simulated samples")
+        _ax.plot(_fine, _weight, "-", color=C_TRUTH, linewidth=2.2,
+                 label="$e^{-2V/\\sigma^2}$, exact")
+        _ax.set_xlabel("$x$")
+        _ax.set_ylabel("density")
+        _ax.legend(fontsize=8, framealpha=0.9)
+    finish_mpl(_fig, "The identity that pins the drift and the noise together")
+    return
+
+
+@app.cell(hide_code=True)
+def s1_check_note(DENSITY_RATIO, DENSITY_RATIO_EXACT, DENSITY_WORST_ERROR, mo, np):
+    _m = np.asarray(DENSITY_RATIO)
+    _e = np.asarray(DENSITY_RATIO_EXACT)
+    mo.md(
+        rf"""
+    That agreement is doing more work than it looks. The Boltzmann form holds only if
+    the drift really is $-V'(x)$ **and** the integrator's noise really is
+    $\sigma\sqrt{{\Delta t}}$ per step. Getting either wrong — a factor of two in the
+    diffusion coefficient is the classic error, since it is defined per *square root* of
+    time — moves the density visibly. So one comparison tests both.
+
+    Measured as the ratio of the two lobes' populations: {_m[0]:.3f} against an exact
+    {_e[0]:.3f}, and {_m[1]:.2f} against {_e[1]:.2f} — worst error
+    **{DENSITY_WORST_ERROR:.1f} %** across a ratio spanning a factor of fourteen. The
+    residual is sampling noise: 12 million samples from 400 members are far from 12
+    million independent ones.
+    """
+    )
+    return
+
+
+# ===========================================================================
+# Section 2
+# ===========================================================================
+@app.cell(hide_code=True)
+def s2_md(KRAMERS_MU, mo):
+    mo.md(
+        rf"""
+    ## 2 · Tipping without a tipping point
+
+    A system can leave its state with the parameter held perfectly still. Noise does it:
+    a sufficiently unlucky run of kicks carries the ball over the barrier, and the
+    waiting time is Kramers':
+
+    $$
+    \tau = \frac{{2\pi}}{{\sqrt{{V''(x_w)\,|V''(x_s)|}}}}
+           \exp\!\left(\frac{{2\Delta V}}{{\sigma^2}}\right).
+    $$
+
+    This matters because it is a *transition with no precursor whatsoever*. The
+    parameter is constant, the potential is constant, the statistics in the well are
+    stationary — and then the system is somewhere else. Anything built to detect a
+    changing parameter cannot see it coming, which section 5 measures.
+
+    Below, escape times from the left well at $\mu = {KRAMERS_MU:g}$.
+    """
+    )
+    return
+
+
+@app.cell(hide_code=True)
+def s2_fig(
+    C_BG, C_OBS, C_PERT, C_TRUTH, KRAMERS_ESCAPED, KRAMERS_SIGMAS,
+    KRAMERS_SLOPE_ALL, KRAMERS_SLOPE_CLEAN, KRAMERS_SLOPE_EXACT, KRAMERS_TAU,
+    KRAMERS_TAU_PREDICTED, finish_mpl, mpl_panels, np,
+):
+    _sigma = np.asarray(KRAMERS_SIGMAS)
+    _inverse = 1.0 / _sigma**2
+    _tau = np.asarray(KRAMERS_TAU)
+    _escaped = np.asarray(KRAMERS_ESCAPED)
+    _complete = _escaped >= 1.0
+
+    _fig, (_ax0, _ax1) = mpl_panels(
+        ncols=2,
+        titles=("Escape time against inverse noise variance",
+                "The slope is the barrier; the prefactor is not"),
+        figsize=(10.2, 4.0),
+    )
+    _ax0.semilogy(_inverse[_complete], _tau[_complete], "o", color=C_OBS,
+                  markersize=9, label="measured, every member escaped")
+    _ax0.semilogy(_inverse[~_complete], _tau[~_complete], "s", color=C_PERT,
+                  markersize=9, markerfacecolor="none", markeredgewidth=2,
+                  label="measured, censored")
+    _line = np.linspace(_inverse.min() * 0.95, _inverse.max() * 1.05, 50)
+    _ax0.semilogy(
+        _line,
+        np.exp(np.polyval(np.polyfit(_inverse[_complete],
+                                     np.log(_tau[_complete]), 1), _line)),
+        "-", color=C_TRUTH, linewidth=2.0,
+        label=f"fit, uncensored: slope {KRAMERS_SLOPE_CLEAN:.4f}",
+    )
+    _ax0.semilogy(
+        _line,
+        np.exp(np.polyval(np.polyfit(_inverse, np.log(_tau), 1), _line)),
+        "--", color=C_PERT, linewidth=1.8,
+        label=f"fit, all points: slope {KRAMERS_SLOPE_ALL:.4f}",
+    )
+    _ax0.set_xlabel("$1/\\sigma^2$")
+    _ax0.set_ylabel("mean escape time (TU)")
+    _ax0.legend(fontsize=7.5, framealpha=0.9, loc="upper left")
+
+    _ratio = _tau / np.asarray(KRAMERS_TAU_PREDICTED)
+    _ax1.plot(_inverse, _ratio, "-", color=C_OBS, linewidth=2.0)
+    _ax1.plot(_inverse[_complete], _ratio[_complete], "o", color=C_OBS,
+              markersize=9, label="every member escaped")
+    _ax1.plot(_inverse[~_complete], _ratio[~_complete], "s", color=C_PERT,
+              markersize=9, markerfacecolor="none", markeredgewidth=2,
+              label="censored — an artefact, not physics")
+    _ax1.axhline(1.0, color=C_BG, linestyle="--", linewidth=1.4)
+    _ax1.text(_inverse.mean(), 1.02, "Kramers' formula", fontsize=8,
+              color=C_BG, ha="center")
+    _ax1.legend(fontsize=7.5, framealpha=0.9, loc="lower left")
+    _ax1.set_ylim(0.0, 1.2)
+    _ax1.set_xlabel("$1/\\sigma^2$")
+    _ax1.set_ylabel("measured / predicted")
+    finish_mpl(
+        _fig,
+        f"exact slope $2\\Delta V = {KRAMERS_SLOPE_EXACT:.4f}$",
+    )
+    return
+
+
+@app.cell(hide_code=True)
+def s2_note(
+    KRAMERS_ESCAPED, KRAMERS_PREFACTOR_RATIO, KRAMERS_SIGMAS,
+    KRAMERS_SLOPE_ALL, KRAMERS_SLOPE_BIAS, KRAMERS_SLOPE_CLEAN,
+    KRAMERS_SLOPE_ERROR, KRAMERS_SLOPE_EXACT, mo, np,
+):
+    _escaped = np.asarray(KRAMERS_ESCAPED)
+    _worst = int(np.argmin(_escaped))
+    mo.md(
+        rf"""
+    **The exponent is exact; the prefactor is not.** The fitted slope over the noise
+    levels where every member escaped is {KRAMERS_SLOPE_CLEAN:.4f} against an exact
+    $2\Delta V = {KRAMERS_SLOPE_EXACT:.4f}$ — **{KRAMERS_SLOPE_ERROR} %**. The
+    prefactor is another matter: the right-hand panel sits at about
+    {KRAMERS_PREFACTOR_RATIO:.2f}, so Kramers' formula overestimates the *waiting time*
+    by roughly 60 % here. It is asymptotic in $2\Delta V/\sigma^2$, and a tipping
+    problem lives at moderate values of that ratio, not large ones. **Use it for
+    scaling, not for a date.**
+
+    /// admonition | The censored point, and why it is plotted
+        type: warning
+
+    At $\sigma = {KRAMERS_SIGMAS[_worst]:g}$ only **{100*_escaped[_worst]:.0f} %** of
+    members escaped within the run. Averaging the ones that did is a *censored*
+    estimator, and it is biased low by construction — the slow escapes are exactly the
+    ones missing. Including that single point drags the fitted slope to
+    {KRAMERS_SLOPE_ALL:.4f}, an error of **{KRAMERS_SLOPE_BIAS} %** rather than
+    {KRAMERS_SLOPE_ERROR} %.
+
+    It is left in the figure as an open square because this is not a hypothetical: the
+    censored point is the one at the *deepest* barrier, which is to say the most
+    interesting one, and it is also the one a finite computing budget or a finite
+    observational record will always produce. `chaoslib.earlywarning.escape_times`
+    returns `nan` for a member that never escaped rather than quietly omitting it, so
+    that the check is `np.isnan(...).any()` and not an act of vigilance.
+    ///
+    """
+    )
+    return
+
+
+# ===========================================================================
+# Section 3
+# ===========================================================================
+@app.cell(hide_code=True)
+def s3_md(CSD_SIGMA, mo):
+    mo.md(
+        rf"""
+    ## 3 · Critical slowing down, and the exact laws behind it
+
+    Now the mechanism every early-warning indicator rests on. Near a stable state the
+    dynamics linearise to an Ornstein–Uhlenbeck process with restoring rate
+    $\lambda = f'(x^*) < 0$, for which two quantities are known **exactly**:
+
+    $$
+    \operatorname{{var}} x = \frac{{\sigma^2}}{{2|\lambda|}},
+    \qquad
+    \operatorname{{corr}}(x_t, x_{{t+\Delta t}}) = e^{{\lambda \Delta t}} .
+    $$
+
+    Both blow up as $\lambda \to 0$. And $\lambda$ does go to zero at the fold, at a
+    known rate: expanding about $(x_c, \mu_c)$, where $f_{{xx}} = 2\sqrt3$,
+
+    $$
+    \lambda \simeq -2 \cdot 3^{{1/4}} \sqrt{{\mu_c - \mu}},
+    \qquad
+    \Delta V \simeq \tfrac43 3^{{-1/4}} (\mu_c - \mu)^{{3/2}} .
+    $$
+
+    So variance should grow as $(\mu_c-\mu)^{{-1/2}}$ and autocorrelation should
+    approach 1. That is the warning. Measured at $\sigma = {CSD_SIGMA:g}$:
+    """
+    )
+    return
+
+
+@app.cell(hide_code=True)
+def s3_fig(
+    CSD_AC, CSD_AC_PREDICTED, CSD_ESCAPED, CSD_MUS, CSD_SD, CSD_SD_PREDICTED,
+    C_BG, C_OBS, C_PERT, C_TRUTH, MU_C, finish_mpl, mpl_panels, np,
+):
+    _mu = np.asarray(CSD_MUS)
+    _escaped = np.asarray(CSD_ESCAPED)
+    _ok = _escaped < 0.02
+    _fine = np.linspace(0.0, MU_C - 0.002, 300)
+
+    _fig, (_ax0, _ax1) = mpl_panels(
+        ncols=2,
+        titles=("Standard deviation in the well", "Lag-1 autocorrelation"),
+        figsize=(10.2, 4.0),
+    )
+    for _ax, _measured, _predicted, _label in (
+        (_ax0, np.asarray(CSD_SD), np.asarray(CSD_SD_PREDICTED),
+         "$\\sigma/\\sqrt{2|\\lambda|}$"),
+        (_ax1, np.asarray(CSD_AC), np.asarray(CSD_AC_PREDICTED),
+         "$e^{\\lambda \\Delta t}$"),
+    ):
+        _ax.plot(_mu, _predicted, "-", color=C_TRUTH, linewidth=2.4,
+                 label=f"exact: {_label}")
+        _ax.plot(_mu[_ok], _measured[_ok], "o", color=C_OBS, markersize=9,
+                 markeredgecolor="white", markeredgewidth=1.2,
+                 label="measured, well intact")
+        _ax.plot(_mu[~_ok], _measured[~_ok], "X", color=C_PERT, markersize=12,
+                 markeredgecolor="white", markeredgewidth=1.2,
+                 label="measured, members escaped")
+        _ax.axvline(MU_C, color=C_BG, linestyle=":", linewidth=1.5)
+        _ax.set_xlabel("tilt $\\mu$")
+        _ax.legend(fontsize=8, framealpha=0.9, loc="upper left")
+    _ax0.set_ylabel("standard deviation")
+    _ax1.set_ylabel("autocorrelation")
+    _ax1.text(MU_C, 0.62, "fold ", fontsize=8, color=C_BG, ha="right",
+              rotation=90, va="bottom")
+    finish_mpl(
+        _fig,
+        "The indicator rises as predicted — and then stops describing its own system",
+    )
+    return
+
+
+@app.cell(hide_code=True)
+def s3_note(
+    CSD_AC, CSD_AC_PREDICTED, CSD_BASIN, CSD_CLEAN_MU_MAX, CSD_CLEAN_WORST,
+    CSD_CLEAN_WORST_AC, CSD_ESCAPED, CSD_MUS, CSD_SD, CSD_SD_PREDICTED,
+    CSD_SIGMA, mo, np,
+):
+    _mu = np.asarray(CSD_MUS)
+    _escaped = np.asarray(CSD_ESCAPED)
+    _sd, _sd_pred = np.asarray(CSD_SD), np.asarray(CSD_SD_PREDICTED)
+    _ac, _ac_pred = np.asarray(CSD_AC), np.asarray(CSD_AC_PREDICTED)
+    _first_bad = int(np.argmax(_escaped >= 0.02))
+    mo.md(
+        rf"""
+    **Where the well still holds the system, the exact laws are the answer.** Up to
+    $\mu = {CSD_CLEAN_MU_MAX}$ the measured standard deviation matches
+    $\sigma/\sqrt{{2|\lambda|}}$ to **{CSD_CLEAN_WORST} %** and the autocorrelation
+    matches $e^{{\lambda\Delta t}}$ to **{CSD_CLEAN_WORST_AC} %**. Both rise as the fold
+    approaches, exactly as advertised.
+
+    **And then the indicator stops working, well before the fold.** At
+    $\mu = {_mu[_first_bad]:g}$ — still ${(_mu[_first_bad]):.3f}$ against a fold at
+    $0.385$ — **{100*_escaped[_first_bad]:.0f} %** of members have already left the well,
+    and the measured standard deviation is {_sd[_first_bad]/_sd_pred[_first_bad]:.1f}
+    times the theory. Closer in it is *worse than useless*: by
+    $\mu = {_mu[-1]:g}$ every member has escaped, and the measured autocorrelation has
+    **fallen** to {_ac[-1]:.2f} while the theory says {_ac_pred[-1]:.2f}. An analyst
+    watching that number would conclude the system was becoming *more* stable at the
+    moment it finished tipping.
+
+    The reason is not subtle, and it is not a numerical artefact. The variance the
+    linear theory predicts is growing as $(\mu_c-\mu)^{{-1/2}}$; the distance from the
+    well to the saddle is shrinking as $(\mu_c-\mu)^{{1/2}}$. They cross. Once the
+    predicted fluctuation is comparable to the basin, the fluctuation *is* the escape,
+    and a linear theory of a state the system no longer occupies has nothing to say.
+
+    | $\mu$ | well-to-saddle distance | predicted sd | members escaped |
+    |---|---|---|---|
+    {"".join(
+        f"| {_m:g} | {_b:.3f} | {_p:.3f} | {100*_e:.0f} % |" + chr(10)
+        for _m, _b, _p, _e in zip(_mu, np.asarray(CSD_BASIN), _sd_pred, _escaped)
+    )}
+
+    That crossing point is a calculable distance from the fold, and calculating it is
+    the next section.
+    """
+    )
+    return
+
+
+# ===========================================================================
+# Section 4
+# ===========================================================================
+@app.cell(hide_code=True)
+def s4_md(mo):
+    mo.md(
+        r"""
+    ## 4 · Two timing laws, with opposite signs
+
+    When does a system actually leave, if the parameter is swept through the fold? Two
+    effects compete, and neither can be measured without controlling the other.
+
+    **A noiseless system leaves late.** It takes time to slide down a potential that has
+    only just opened, so the sweep carries it past $\mu_c$ before it goes. In the fold
+    normal form $\dot u = \sqrt3 u^2 + \gamma\tau$ the substitution $u = -w'/w$ gives
+    Airy's equation, so the departure is the first zero of $w$:
+
+    $$
+    \mu_{\text{tip}} - \mu_c \simeq |a_1|\,3^{-1/6}\,\gamma^{2/3} = 1.9469\,\gamma^{2/3},
+    $$
+
+    with $|a_1| = 2.3381\ldots$ the modulus of the first zero of $\mathrm{Ai}$.
+
+    **A noisy system leaves early.** The barrier vanishes as $(\mu_c-\mu)^{3/2}$ — faster
+    than linearly — so escape becomes certain strictly *before* the fold. Integrating
+    Kramers' rate along the sweep is elementary under $w = d^{3/2}$, and gives the
+    distance $d^* = \mu_c - \mu_{\text{tip}}$ at which the cumulative escape probability
+    reaches one half:
+
+    $$
+    d^* = \left[\frac{\sigma^2}{\tfrac83 3^{-1/4}}
+          \ln \frac{2\cdot3^{1/4}\,\sigma^2}
+          {3\pi\,\tfrac83 3^{-1/4}\,\gamma\,\ln 2}\right]^{2/3}.
+    $$
+
+    Both are laws with no fitted constant. Both are measured below.
+    """
+    )
+    return
+
+
+@app.cell(hide_code=True)
+def s4_fig(
+    ADVANCE_GAP, ADVANCE_NAIVE, ADVANCE_PREDICTED, ADVANCE_SIGMAS, C_OBS,
+    C_PERT, C_TRUTH, DELAY, DELAY_RATES, DELAY_RATIO, earlywarning,
+    finish_mpl, mpl_panels, np,
+):
+    _rates = np.asarray(DELAY_RATES)
+    _delay = np.asarray(DELAY)
+    _sigma = np.asarray(ADVANCE_SIGMAS)
+    _fig, (_ax0, _ax1) = mpl_panels(
+        ncols=2,
+        titles=("Noiseless: the sweep carries it past the fold",
+                "Noisy: it leaves before the fold"),
+        figsize=(10.2, 4.0),
+    )
+    _fine_rate = np.linspace(_rates.min() * 0.8, _rates.max() * 1.2, 60)
+    _ax0.loglog(_fine_rate, [earlywarning.fold_delay(_r) for _r in _fine_rate],
+                "-", color=C_TRUTH, linewidth=2.2,
+                label="$1.9469\\,\\gamma^{2/3}$, no fitted constant")
+    _ax0.loglog(_rates, _delay, "o", color=C_OBS, markersize=9,
+                label="measured")
+    _ax0.set_xlabel("sweep rate $\\gamma$")
+    _ax0.set_ylabel("$\\mu_{\\rm tip} - \\mu_c$")
+    _ax0.legend(fontsize=8, framealpha=0.9, loc="upper left")
+
+    _ax1.loglog(_sigma, np.asarray(ADVANCE_PREDICTED), "-", color=C_TRUTH,
+                linewidth=2.2, label="closed form, with the logarithm")
+    _ax1.loglog(_sigma, np.asarray(ADVANCE_NAIVE), "--", color=C_PERT,
+                linewidth=2.0, label="bare $\\sigma^{4/3}$")
+    _ax1.loglog(_sigma, np.asarray(ADVANCE_GAP), "o", color=C_OBS,
+                markersize=9, label="measured")
+    _ax1.set_xlabel("noise $\\sigma$")
+    _ax1.set_ylabel("$\\mu_c - \\mu_{\\rm tip}$")
+    _ax1.legend(fontsize=8, framealpha=0.9, loc="upper left")
+    finish_mpl(_fig, "Dashed and solid lines are predictions, not fits")
+    return
+
+
+@app.cell(hide_code=True)
+def s4_note(
+    ADVANCE_DELAY_AT_RATE, ADVANCE_EXPONENT, ADVANCE_GAP, ADVANCE_NAIVE_HIGH,
+    ADVANCE_NAIVE_LOW, ADVANCE_RATE, ADVANCE_SIGMAS, ADVANCE_WORST,
+    DELAY_BEST_RATIO, DELAY_LAW_CONSTANT, DELAY_RATES, DELAY_RATIO, mo, np,
+):
+    _ratio = np.asarray(DELAY_RATIO)
+    mo.md(
+        rf"""
+    **The Airy constant is right.** Measured delay over the predicted
+    ${DELAY_LAW_CONSTANT:.4f}\,\gamma^{{2/3}}$ runs
+    {", ".join(f"{_r:.3f}" for _r in _ratio)} as the sweep slows —
+    monotonically towards 1, reaching **{DELAY_BEST_RATIO:.3f}** at
+    $\gamma = {DELAY_RATES[-1]:g}$. The approach from below is expected: the law is
+    asymptotic in slow sweeps, and the correction is of the same sign at every rate.
+
+    **The noise law needs its logarithm.** With the sweep slow enough
+    ($\gamma = {ADVANCE_RATE:g}$, so the deterministic delay is only
+    ${ADVANCE_DELAY_AT_RATE:.5f}$ and cannot contaminate the answer) the closed form
+    predicts the measured median tipping tilt to **{ADVANCE_WORST} %** across a factor
+    of five in $\sigma$.
+
+    Drop the logarithm and you get the $\sigma^{{4/3}}$ scaling that is usually quoted.
+    It is **wrong by a factor rising from {ADVANCE_NAIVE_LOW} to
+    {ADVANCE_NAIVE_HIGH}** across the same range — not a constant offset, a trend, which
+    is why fitting a power law to the measurements returns
+    $\sigma^{{{ADVANCE_EXPONENT}}}$ rather than $\sigma^{{1.333}}$. The exponent is not
+    4/3 because there is no pure power law: the logarithm carries the sweep rate, and a
+    slower sweep gives noise more time to find the barrier.
+
+    /// admonition | What this says about a real system
+        type: note
+
+    The distance-to-fold at which the system commits is set by $\sigma^2\ln(\sigma^2/\gamma)$,
+    so it depends on the **noise and the rate of change**, not on the fold alone. Two
+    systems with identical bifurcation structure tip at different forcings if their
+    internal variability differs. A tipping threshold quoted as a property of the system
+    — a temperature, a freshwater flux — is only complete with the variability and the
+    rate of approach attached to it.
+    ///
+    """
+    )
+    return
+
+
+# ===========================================================================
+# Section 5
+# ===========================================================================
+@app.cell(hide_code=True)
+def s5_md(EWS_FALSE_ALARM, EWS_SAMPLE, EWS_WIDTH, mo):
+    mo.md(
+        rf"""
+    ## 5 · Early warning as a detection problem
+
+    Sections 3 and 4 give the theory every reason to work. Now run it the way it would
+    actually be used.
+
+    The recipe from the literature: take a record, slide a window along it
+    ({EWS_WIDTH} samples of {EWS_SAMPLE:g} TU here), compute the variance and the
+    lag-1 autocorrelation in each window, and test whether they *trend* upward using
+    Kendall's $\tau$. Raise the alarm when $\tau$ is large.
+
+    **How large?** This is where most presentations stop, and it is the only part that
+    determines whether the method has any skill. $\tau$ computed on overlapping windows
+    of an autocorrelated record has a null distribution far wider than the
+    independent-sample one, so a threshold from a table is meaningless. Instead the
+    threshold here is **calibrated against a null run** — the same system with the
+    parameter held fixed — at the {EWS_FALSE_ALARM:g}th percentile. The false-alarm rate
+    is therefore {EWS_FALSE_ALARM:g} % *by construction*, and everything else is a fair
+    comparison against it.
+
+    Four scenarios, 200 realisations each:
+
+    | scenario | parameter | does it tip? |
+    |---|---|---|
+    | **null** | held at $\mu = 0$ | no |
+    | **ramp** | swept through the fold | yes |
+    | **stops short** | swept to $\mu = 0.30$, then held | no |
+    | **noise-induced** | held at $\mu = 0.25$, larger $\sigma$ | yes |
+    """
+    )
+    return
+
+
+@app.cell(hide_code=True)
+def s5_example(
+    C_BG, C_OBS, C_PERT, C_TRUTH, EWS_EXAMPLE_AC, EWS_EXAMPLE_CENTRES,
+    EWS_EXAMPLE_TIME, EWS_EXAMPLE_TIP, EWS_EXAMPLE_VARIANCE, EWS_EXAMPLE_X,
+    EWS_RATE, finish_mpl, mpl_panels, np,
+):
+    _t = np.asarray(EWS_EXAMPLE_TIME)
+    _x = np.asarray(EWS_EXAMPLE_X)
+    _c = np.asarray(EWS_EXAMPLE_CENTRES)
+    _tip = float(np.asarray(EWS_EXAMPLE_TIP)[0])
+    _fig, (_ax0, _ax1) = mpl_panels(
+        ncols=2,
+        titles=("One realisation, up to the moment it tips",
+                "What the indicators were doing"),
+        figsize=(10.2, 4.0),
+    )
+    _ax0.plot(_t, _x, "-", color=C_TRUTH, linewidth=1.0)
+    _ax0.axhline(0.0, color=C_BG, linestyle=":", linewidth=1.2)
+    _ax0.set_xlabel("time (TU)")
+    _ax0.set_ylabel("$x$")
+    _ax0b = _ax0.twinx()
+    _ax0b.plot(_t, EWS_RATE * _t, "--", color=C_PERT, linewidth=1.6)
+    _ax0b.set_ylabel("tilt $\\mu$", color=C_PERT)
+    _ax0b.tick_params(axis="y", labelcolor=C_PERT)
+
+    _ax1.plot(_c, np.asarray(EWS_EXAMPLE_VARIANCE), "-", color=C_OBS,
+              linewidth=2.2, label="windowed variance")
+    _ax1.set_xlabel("window centre (TU)")
+    _ax1.set_ylabel("variance", color=C_OBS)
+    _ax1.tick_params(axis="y", labelcolor=C_OBS)
+    _ax1b = _ax1.twinx()
+    _ax1b.plot(_c, np.asarray(EWS_EXAMPLE_AC), "-", color=C_PERT,
+               linewidth=2.2, label="lag-1 autocorrelation")
+    _ax1b.set_ylabel("autocorrelation", color=C_PERT)
+    _ax1b.tick_params(axis="y", labelcolor=C_PERT)
+    finish_mpl(
+        _fig,
+        f"tips at $t = {_tip:.0f}$ TU, at a tilt of {EWS_RATE * _tip:.3f}",
+    )
+    return
+
+
+@app.cell(hide_code=True)
+def s5_fig(
+    C_BG, C_OBS, C_PERT, EWS_ALARM_AC, EWS_ALARM_VAR, EWS_FALSE_ALARM,
+    EWS_LEADS, EWS_LEAD_ALARM, EWS_MEDIAN_TIP, EWS_SCENARIOS, EWS_TIPPED,
+    finish_mpl, mpl_panels, np,
+):
+    _n = len(EWS_SCENARIOS)
+    _pos = np.arange(_n, dtype=float)
+    _labels = ("null", "ramp\nthrough", "stops\nshort", "noise-\ninduced")
+    _fig, (_ax0, _ax1) = mpl_panels(
+        ncols=2,
+        titles=("Alarm rate, against whether it actually tipped",
+                "How early can the alarm be raised?"),
+        figsize=(10.2, 4.0),
+    )
+    _ax0.bar(_pos - 0.26, np.asarray(EWS_ALARM_VAR), width=0.24, color=C_OBS,
+             label="alarm: variance trend")
+    _ax0.bar(_pos, np.asarray(EWS_ALARM_AC), width=0.24, color=C_PERT,
+             label="alarm: autocorrelation trend")
+    _ax0.bar(_pos + 0.26, np.asarray(EWS_TIPPED), width=0.24, color=C_BG,
+             label="actually tipped")
+    _ax0.axhline(EWS_FALSE_ALARM / 100.0, color=C_BG, linestyle="--",
+                 linewidth=1.4)
+    _ax0.text(-0.45, EWS_FALSE_ALARM / 100.0 + 0.10,
+              f"calibrated: {EWS_FALSE_ALARM:g} %", fontsize=7.5,
+              color=C_BG, ha="left")
+    _ax0.set_xticks(_pos)
+    _ax0.set_xticklabels(_labels, fontsize=8.5)
+    _ax0.set_ylim(0.0, 1.45)
+    _ax0.set_ylabel("fraction of 200 realisations")
+    _ax0.legend(fontsize=8, framealpha=0.9, loc="upper left")
+
+    _leads = np.asarray(EWS_LEADS)
+    _ax1.plot(_leads, np.asarray(EWS_LEAD_ALARM), "o-", color=C_OBS,
+              markersize=8, linewidth=2.2)
+    _ax1.axhline(EWS_FALSE_ALARM / 100.0, color=C_BG, linestyle="--",
+                 linewidth=1.4)
+    _ax1.text(_leads[-1], EWS_FALSE_ALARM / 100.0 + 0.03,
+              f"{EWS_FALSE_ALARM:g} % false alarms", fontsize=7.5,
+              color=C_BG, ha="right")
+    _ax1.set_xlabel("decision made this many TU before tipping")
+    _ax1.set_ylabel("alarm rate")
+    _ax1.set_ylim(0.0, 1.08)
+    finish_mpl(
+        _fig,
+        f"median tipping at $t = {EWS_MEDIAN_TIP:.0f}$ TU, so the rightmost point "
+        f"discards {100*_leads[-1]/EWS_MEDIAN_TIP:.0f} % of the record",
+    )
+    return
+
+
+@app.cell(hide_code=True)
+def s5_note(
+    EWS_ALARM_AC, EWS_ALARM_VAR, EWS_FALSE_ALARM, EWS_HOLD, EWS_LEADS,
+    EWS_LEAD_ALARM, EWS_MEDIAN_TIP, EWS_MEDIAN_TIP_MU, EWS_MEDIAN_TAU_VAR,
+    EWS_NOISE_MU, EWS_PREDICTED_MU, EWS_RATE, EWS_TIPPED, EWS_THRESHOLD_VAR,
+    MU_C, mo, np,
+):
+    _var = np.asarray(EWS_ALARM_VAR)
+    _ac = np.asarray(EWS_ALARM_AC)
+    _tipped = np.asarray(EWS_TIPPED)
+    _lead = np.asarray(EWS_LEAD_ALARM)
+    _leads = np.asarray(EWS_LEADS)
+    _useful = _leads[_lead > 0.9]
+    mo.md(
+        rf"""
+    | scenario | tipped | alarm (variance) | alarm (autocorrelation) |
+    |---|---|---|---|
+    | null, $\mu$ fixed | {100*_tipped[0]:.0f} % | {100*_var[0]:.0f} % | {100*_ac[0]:.0f} % |
+    | ramp through the fold | {100*_tipped[1]:.0f} % | **{100*_var[1]:.0f} %** | {100*_ac[1]:.0f} % |
+    | ramp stopping at ${EWS_HOLD:g}$ | {100*_tipped[2]:.0f} % | **{100*_var[2]:.0f} %** | {100*_ac[2]:.0f} % |
+    | noise-induced at $\mu = {EWS_NOISE_MU:g}$ | {100*_tipped[3]:.0f} % | {100*_var[3]:.0f} % | {100*_ac[3]:.0f} % |
+
+    **What works.** Against a genuine sweep the indicator is not marginal — it fires on
+    **{100*_var[1]:.0f} %** of realisations, against a false-alarm rate fixed at
+    {EWS_FALSE_ALARM:g} %. And the warning is not last-minute: the right-hand panel
+    shows the alarm still firing on more than 90 % of realisations when the decision
+    must be made **{_useful[-1]:.0f} TU** early — {100*_useful[-1]/EWS_MEDIAN_TIP:.0f} %
+    of the record thrown away, a decision taken at a tilt of
+    ${EWS_RATE*(EWS_MEDIAN_TIP-_useful[-1]):.3f}$ when tipping comes at
+    ${EWS_MEDIAN_TIP_MU}$. Lead time is not the problem.
+
+    **What fails, and it is not a detail.** The scenario that ramps to
+    $\mu = {EWS_HOLD:g}$ and stops **never tips** — and the alarm fires on
+    **{100*_var[2]:.0f} %** of those realisations, statistically indistinguishable from
+    the {100*_var[1]:.0f} % on the runs that do tip. The indicator is not broken; it is
+    answering a different question from the one being asked of it. Rising variance is
+    evidence that the system is **approaching a bifurcation**, which is true in both
+    cases. It carries no information about whether the approach will *continue*, because
+    that is a fact about the forcing, not about the system's own dynamics. No statistic
+    computed from a record of $x$ can supply it.
+
+    **And the transitions with no precursor at all.** The noise-induced scenario tips
+    **{100*_tipped[3]:.0f} %** of the time with the parameter held perfectly still, and
+    the alarm fires on **{100*_var[3]:.0f} %** — against {EWS_FALSE_ALARM:g} % by
+    construction, so essentially no skill. Four realisations in five tip with no warning
+    whatsoever. This is not a failure of the estimator: there is genuinely nothing to
+    detect, because the potential never changed. Section 2's point, arriving as a
+    number.
+
+    /// admonition | The honest summary
+        type: warning
+
+    Early-warning indicators have **good lead time and good recall, and no
+    specificity.** They detect an approaching bifurcation, they cannot tell you whether
+    it will be reached, and they are blind to the class of transitions that needs no
+    bifurcation at all. In a real record you do not know which scenario you are in —
+    that is the entire problem — and the indicator does not tell you.
+
+    Which is worth being precise about rather than cynical about. A rising-variance
+    alarm is real information: it says the system is closer to a fold than it was. What
+    it is not is a forecast.
+    ///
+    """
+    )
+    return
+
+
+# ===========================================================================
+# Section 6
+# ===========================================================================
+@app.cell(hide_code=True)
+def s6_md(mo):
+    mo.md(
+        r"""
+    ## 6 · What to take away
+
+    **A tipping point is a change in the number of states, not a large change in one.**
+    Below the fold there are three fixed points and above it there is one, and that
+    count is what makes the transition irreversible in a way that no amount of smooth
+    forcing response is.
+
+    **A system can tip with nothing changing.** Kramers' escape needs no bifurcation,
+    no trend, and no precursor — only time. The escape time is exponential in
+    $1/\sigma^2$ with slope exactly $2\Delta V$, measured here to 0.7 %, while the
+    formula's *prefactor* is optimistic by 60 % at realistic barrier heights.
+
+    **Critical slowing down is exactly true and stops being useful before the fold.**
+    Variance and autocorrelation match $\sigma^2/2|\lambda|$ and $e^{\lambda\Delta t}$
+    to a few per cent while the well holds the system, and then diverge from theory —
+    and eventually move the *wrong way* — because the predicted fluctuation has grown
+    to the size of the basin. Those two things happen at the same distance from the
+    fold, for the same reason.
+
+    **Where a system commits is set by its noise and its rate of change, not by the
+    fold alone.** The deterministic sweep overshoots by $1.9469\,\gamma^{2/3}$; the
+    noise undershoots by $[\sigma^2\ln(\sigma^2/\gamma)\ldots]^{2/3}$. A threshold
+    quoted as a property of the system is incomplete without both.
+
+    **Early warning has recall without specificity.** Calibrated to a 5 % false-alarm
+    rate it catches 100 % of genuine sweeps with substantial lead time — and 100 % of
+    approaches that stop short and never tip, and 13 % of noise-induced transitions
+    against a 5 % baseline. It measures distance to a bifurcation. It does not forecast
+    a crossing.
+
+    ### Try this
+
+    1. Section 1's slider changes $\sigma$ without changing the potential. At what noise
+       does "which state the system is in" stop being a useful description, and what
+       does that correspond to in section 5's detection problem?
+    2. The Kramers prefactor is 60 % optimistic here. Estimate the barrier height at
+       which it would be good to 10 %, and say whether a system with that barrier is one
+       anybody would worry about tipping.
+    3. Section 3's two failure conditions — the fluctuation reaching the basin width and
+       members escaping — coincide. Show that they must, using the near-fold scalings.
+    4. Section 5's "stops short" scenario defeats the indicator. Design a measurement
+       that *would* distinguish it from the genuine sweep, and say what extra information
+       your measurement requires.
+
+    ### Where this goes next
+
+    **Chapter 28** asks whether predictability itself has changed over time, which is
+    the same question as this chapter's asked of a system whose parameters are moving.
+    **Chapter 26** covers the slow components — deep ocean, carbon cycle, ice — whose
+    memory outlives the observational record, and which are where the tipping
+    literature's real candidates live.
+
+    ### Further reading
+
+    - Scheffer et al. (2009), on early-warning signals for critical transitions
+      *[citation needed]*
+    - Lenton et al. (2008), on tipping elements in the Earth system *[citation needed]*
+    - Ditlevsen & Johnsen, on noise-induced versus bifurcation-induced tipping
+      *[citation needed]*
+    - Ashwin et al., on rate-induced tipping *[citation needed]*
+    - Boers (2021), on early-warning signals in the observational record and their
+      statistical pitfalls *[citation needed]*
+    - Kramers (1940), on escape over a potential barrier *[citation needed]*
+    """
+    )
+    return
+
+
+if __name__ == "__main__":
+    app.run()

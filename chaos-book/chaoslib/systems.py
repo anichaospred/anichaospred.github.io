@@ -51,6 +51,14 @@ __all__ = [
     "cubic_map",
     "cubic_map_derivative",
     "henon_map",
+    "double_well",
+    "double_well_potential",
+    "double_well_fixed_points",
+    "double_well_fold",
+    "double_well_barrier",
+    "double_well_restoring_rate",
+    "double_well_ramped",
+    "double_well_ramp",
 ]
 
 
@@ -754,3 +762,127 @@ def henon_map(xy: Array, a: float = 1.4, b: float = 0.3) -> Array:
     xy = np.asarray(xy, dtype=float)
     x, y = xy[..., 0], xy[..., 1]
     return np.stack([1.0 - a * x**2 + y, b * x], axis=-1)
+
+
+# --------------------------------------------------------------------------
+# Bistability and tipping: the cusp/double-well normal form
+# --------------------------------------------------------------------------
+def double_well(t: float, x: Array, mu: float = 0.0) -> Array:
+    r"""Gradient flow in a tilted double well, :math:`\dot x = x - x^3 + \mu`.
+
+    The normal form for a system with two competing stable states -- two
+    circulation regimes, two ice-cover states, an on and an off branch of an
+    overturning circulation. It is the gradient of
+
+    .. math:: V(x) = -\tfrac12 x^2 + \tfrac14 x^4 - \mu x
+
+    so :math:`\dot x = -V'(x)`, and with additive noise the stationary density
+    is exactly Boltzmann, :math:`p(x) \propto e^{-2V(x)/\sigma^2}` -- an exact
+    identity that pins both this drift and the integrator's noise convention
+    together, which the tests use.
+
+    :math:`\mu` tilts the well. At :math:`\mu = \mu_c = 2/(3\sqrt3)` the
+    left minimum and the saddle merge at :math:`x = -1/\sqrt3` and the left
+    state ceases to exist: a fold, and the tipping point of the chapter.
+
+    Vectorised over any shape, so an ensemble integrates in one call.
+    """
+    x = np.asarray(x, dtype=float)
+    return x - x**3 + mu
+
+
+def double_well_potential(x: Array, mu: float = 0.0) -> Array:
+    r""":math:`V(x) = -x^2/2 + x^4/4 - \mu x`, whose negative gradient is
+    :func:`double_well`."""
+    x = np.asarray(x, dtype=float)
+    return -0.5 * x**2 + 0.25 * x**4 - mu * x
+
+
+def double_well_fold(sign: int = 1) -> tuple[float, float]:
+    r"""The exact fold of :func:`double_well`, as :math:`(\mu_c, x_c)`.
+
+    ``sign=+1`` returns :math:`(2/(3\sqrt3),\, -1/\sqrt3)` -- the tilt at
+    which the **left** state is destroyed, which is the one the chapter ramps
+    towards. ``sign=-1`` returns the mirror image.
+
+    Both :math:`f` and :math:`\partial f/\partial x` vanish there
+    identically, not to tolerance, which is what makes it a fold and what the
+    tests assert to machine precision.
+    """
+    mu_c = 2.0 / (3.0 * np.sqrt(3.0))
+    x_c = -1.0 / np.sqrt(3.0)
+    return (mu_c, x_c) if sign > 0 else (-mu_c, -x_c)
+
+
+def double_well_fixed_points(mu: float = 0.0) -> Array:
+    r"""Real roots of :math:`x - x^3 + \mu = 0`, ascending.
+
+    Three for :math:`|\mu| < \mu_c` -- left well, saddle, right well -- and
+    one beyond the fold. The count *is* the diagnostic: a system with one
+    fixed point cannot tip, because there is nowhere to tip from.
+    """
+    roots = np.roots([-1.0, 0.0, 1.0, float(mu)])
+    real = roots[np.abs(roots.imag) < 1e-9].real
+    return np.sort(real)
+
+
+def double_well_barrier(mu: float = 0.0) -> float:
+    r"""Potential barrier :math:`\Delta V` from the **left** well to the saddle.
+
+    Returns ``nan`` past the fold, where there is no left well to escape from.
+
+    Near the fold this has the exact asymptote
+
+    .. math:: \Delta V \simeq \tfrac43 3^{-1/4} (\mu_c - \mu)^{3/2},
+
+    obtained by expanding :math:`f` about :math:`(x_c, \mu_c)`, where
+    :math:`f_{xx} = 2\sqrt3`. The :math:`3/2` power is the whole reason
+    tipping cannot be waited out: the barrier vanishes *faster* than linearly
+    in the distance to the fold, so at fixed noise the escape becomes certain
+    strictly before the fold is reached (chapter 27, section 4).
+    """
+    points = double_well_fixed_points(mu)
+    if points.size < 3:
+        return float("nan")
+    well, saddle = points[0], points[1]
+    return float(double_well_potential(saddle, mu) - double_well_potential(well, mu))
+
+
+def double_well_restoring_rate(mu: float = 0.0) -> float:
+    r"""Linear restoring rate :math:`\lambda = f'(x^*) = 1 - 3x^{*2}` at the
+    left well, negative for a stable state; ``nan`` past the fold.
+
+    This is the quantity early-warning indicators are really measuring. Near
+    the fold it has the exact asymptote
+
+    .. math:: \lambda \simeq -2 \cdot 3^{1/4} \sqrt{\mu_c - \mu},
+
+    so it goes to zero as the square root of the distance to the fold -- the
+    critical slowing down of chapter 27, section 3.
+    """
+    points = double_well_fixed_points(mu)
+    if points.size < 3:
+        return float("nan")
+    return float(1.0 - 3.0 * points[0] ** 2)
+
+
+def double_well_ramped(
+    t: float, x: Array, mu_start: float = 0.0, mu_rate: float = 0.0
+) -> Array:
+    r""":func:`double_well` with a tilt that ramps, :math:`\mu(t) = \mu_0 +
+    \gamma t`.
+
+    With ``mu_rate = 0`` this is :func:`double_well` **bitwise**, which the
+    tests assert -- the terms are grouped identically so the zero-rate control
+    and the ramped run share a discretisation exactly.
+    """
+    x = np.asarray(x, dtype=float)
+    return x - x**3 + (mu_start + mu_rate * t)
+
+
+def double_well_ramp(
+    t: Array, mu_start: float = 0.0, mu_rate: float = 0.0
+) -> Array:
+    r"""The :math:`\mu(t)` that :func:`double_well_ramped` uses, for plotting."""
+    return mu_start + mu_rate * np.asarray(t, dtype=float)
+
