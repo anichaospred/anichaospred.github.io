@@ -5301,3 +5301,144 @@ def test_energy_drift_measures_the_integrator_not_the_physics():
     assert drifts[0] > drifts[1]
     assert drifts[1] < 1e-6
 
+
+# ==========================================================================
+# Chapter 3: the hierarchy -- what transfers between rungs and what does not
+# ==========================================================================
+def test_horizon_law_is_the_closed_form_and_handles_its_edges():
+    r""":math:`\lambda T = \ln(f\delta_\infty/\delta_0)` by construction, so
+    the assertion is that the implementation *is* that formula and that its
+    degenerate cases are handled rather than returning a plausible number."""
+    saturation, delta0, rate = 20.9, 20.9e-8, 0.8988
+    horizon = errorgrowth.horizon_law(saturation, delta0, rate)
+    assert rate * horizon == pytest.approx(np.log(0.5e8), rel=1e-12)
+    # each decade of initial accuracy buys exactly ln(10)/lambda, forever
+    finer = errorgrowth.horizon_law(saturation, delta0 / 10.0, rate)
+    assert finer - horizon == pytest.approx(np.log(10.0) / rate, rel=1e-12)
+    # the law is scale-free: only the ratio matters
+    assert errorgrowth.horizon_law(1.0, 1e-6, rate) == pytest.approx(
+        errorgrowth.horizon_law(1000.0, 1e-3, rate), rel=1e-12
+    )
+    # an initial error already past the threshold gives no lead time, not a
+    # negative one; a non-positive rate is not a growth rate at all
+    assert errorgrowth.horizon_law(1.0, 10.0, 1.0) == 0.0
+    assert np.isnan(errorgrowth.horizon_law(1.0, 1e-8, 0.0))
+    assert np.isnan(errorgrowth.horizon_law(1.0, 1e-8, -0.5))
+
+
+def test_unstable_dimension_counts_growing_directions():
+    """The count of positive exponents, which is not the Kaplan-Yorke
+    dimension and answers a different question."""
+    assert lyapunov.unstable_dimension([1.0, 0.5, -0.1, -2.0]) == 2
+    assert lyapunov.unstable_dimension([-1.0, -2.0]) == 0
+    assert lyapunov.unstable_dimension([0.0, -1.0]) == 0      # neutral is not unstable
+    spectrum = np.array([0.9, 0.0, -14.5])
+    assert lyapunov.unstable_dimension(spectrum) == 1
+    assert lyapunov.kaplan_yorke_dimension(spectrum) > 2.0    # a different quantity
+
+
+def test_the_horizon_law_holds_across_the_hierarchy():
+    r"""Chapter 3's thesis, measured rather than argued: a three-variable flow
+    and a twelve-variable flow obey :math:`\lambda T = \ln(f\delta_\infty/
+    \delta_0)` with each system's own :math:`\lambda` and
+    :math:`\delta_\infty`, and no fitted constant anywhere.
+
+    The chapter measures four rungs over six decades of :math:`\delta_0` and
+    finds 9 % at worst; this asserts two rungs at one :math:`\delta_0`, which
+    is what fits in a test."""
+    cases = (
+        (systems.lorenz63, systems.lorenz63_jacobian,
+         np.array([1.0, 1.0, 20.0]), 0.005, 300.0, 32.0, {}),
+        (systems.lorenz96, systems.lorenz96_jacobian,
+         systems.lorenz96_uniform_state(8.0, 12)
+         + np.random.default_rng(0).normal(0.0, 0.5, 12),
+         0.01, 200.0, 22.0, {"forcing": 8.0}),
+    )
+    for rhs, jacobian, start, dt, spinup, horizon, params in cases:
+        spun = integrate.rk4(
+            rhs, start, integrate.trajectory_grid(spinup, dt), **params
+        )
+        attractor = spun[int(0.3 * spun.shape[0]):]
+        saturation = errorgrowth.saturation_level(attractor, seed=0)
+        spectrum = lyapunov.lyapunov_spectrum(
+            rhs, jacobian, attractor[0], dt=dt, t_final=600.0,
+            t_transient=20.0, **params
+        )
+        rate = float(spectrum[0])
+        assert rate > 0.0
+
+        delta0 = 1e-8 * saturation
+        starts = attractor[:: max(1, attractor.shape[0] // 32)][:32]
+        rng = np.random.default_rng(1)
+        direction = rng.normal(size=starts.shape)
+        direction /= np.linalg.norm(direction, axis=-1, keepdims=True)
+        times = integrate.trajectory_grid(horizon, dt)
+        control = integrate.rk4(rhs, starts, times, **params)
+        twin = integrate.rk4(rhs, starts + delta0 * direction, times, **params)
+        error = np.sqrt(((twin - control) ** 2).sum(axis=-1)).mean(axis=1)
+
+        crossed = error > 0.5 * saturation
+        assert crossed.any(), "lengthen the horizon"
+        measured = float(times[int(np.argmax(crossed))])
+        predicted = errorgrowth.horizon_law(saturation, delta0, rate)
+        assert measured == pytest.approx(predicted, rel=0.12)
+
+
+def test_the_rate_transfers_down_the_hierarchy_but_the_dimension_does_not():
+    r"""Chapter 3's second result. Across Lorenz 96 at :math:`N = 8` and
+    :math:`N = 20`, :math:`\lambda_1` barely moves while the number of unstable
+    directions multiplies -- so a small model can have the right growth rate
+    and the wrong error dimension, which is what sets ensemble size."""
+    rng = np.random.default_rng(0)
+    rates, unstable = [], []
+    for n in (8, 20):
+        start = systems.lorenz96_uniform_state(8.0, n) + rng.normal(0.0, 0.5, n)
+        spun = integrate.rk4(
+            systems.lorenz96, start, integrate.trajectory_grid(200.0, 0.01),
+            forcing=8.0,
+        )
+        spectrum = lyapunov.lyapunov_spectrum(
+            systems.lorenz96, systems.lorenz96_jacobian,
+            spun[int(0.3 * spun.shape[0])], dt=0.01, t_final=600.0,
+            t_transient=20.0, forcing=8.0,
+        )
+        rates.append(float(spectrum[0]))
+        unstable.append(lyapunov.unstable_dimension(spectrum))
+        # the exact identity, at every rung
+        assert spectrum.sum() == pytest.approx(-float(n), rel=1e-3)
+
+    assert abs(rates[1] / rates[0] - 1.0) < 0.20      # the rate is nearly fixed
+    assert unstable[1] >= 2 * unstable[0]             # the dimension is not
+
+
+def test_a_finite_predictability_limit_needs_a_spectrum_of_scales():
+    r"""Where the ladder breaks, and the sharpest limitation on the whole
+    book: the horizon of every single-scale system grows like
+    :math:`\ln(1/\delta_0)` without bound, while a Kolmogorov cascade has a
+    horizon that ten decades of initial accuracy cannot move.
+
+    So the most famous claim about atmospheric predictability -- that the limit
+    is finite -- is a property that **no** low-order system in this library
+    has."""
+    deep = [
+        errorgrowth.cascade_contamination_time(
+            n_bands=24, alpha=errorgrowth.KOLMOGOROV_ALPHA,
+            seed_amplitude=10.0 ** (-d), seed_band=23, threshold=0.5,
+            t_max=4000.0,
+        )
+        for d in (2, 7, 12)
+    ]
+    assert max(deep) - min(deep) < 0.01 * min(deep)   # flat to one per cent
+
+    flat = [
+        errorgrowth.cascade_contamination_time(
+            n_bands=24, alpha=0.0, seed_amplitude=10.0 ** (-d),
+            seed_band=23, threshold=0.5, t_max=4000.0,
+        )
+        for d in (2, 7, 12)
+    ]
+    assert np.all(np.diff(flat) > 0.0)
+    assert flat[-1] - flat[0] > 5.0                   # and keeps paying
+    # the contrast is the point: ten decades buy nothing against several units
+    assert (flat[-1] - flat[0]) > 100.0 * (max(deep) - min(deep))
+

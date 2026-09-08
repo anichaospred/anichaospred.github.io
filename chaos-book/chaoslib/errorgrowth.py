@@ -24,6 +24,7 @@ __all__ = [
     "cascade_rates",
     "cascade_growth",
     "cascade_contamination_time",
+    "horizon_law",
     "initialised_error_variance",
     "initialised_advantage",
     "initialised_useful_lead",
@@ -491,4 +492,50 @@ def initialised_useful_lead(
     if ratio >= 1.0:
         return 0.0
     return float(-0.5 * float(memory) * np.log(ratio))
+
+
+def horizon_law(
+    saturation: float,
+    delta0: float,
+    rate: float,
+    fraction: float = 0.5,
+) -> float:
+    r"""Predictability horizon from exponential growth alone,
+
+    .. math:: T = \frac{1}{\lambda}\ln\frac{f\,\delta_\infty}{\delta_0},
+
+    the time for an error :math:`\delta_0` growing at :math:`\lambda` to reach a
+    fraction :math:`f` of its saturation value.
+
+    **This is the book's thesis in one formula, and chapter 3 measures it as
+    one.** It contains no fitted constant, and it holds across the whole
+    hierarchy: measured against the logistic map (one variable, discrete time),
+    Lorenz 63 (three), and Lorenz 96 at twelve and forty variables, over six
+    decades of :math:`\delta_0`, :math:`\lambda T` agrees with
+    :math:`\ln(f\delta_\infty/\delta_0)` to **9 %** at worst. A one-variable map
+    and a forty-variable flow obey the same law with each system's own
+    :math:`\lambda` and :math:`\delta_\infty` substituted.
+
+    Two cautions, both measured in chapter 3 rather than asserted.
+
+    The law says the horizon grows **without bound** as
+    :math:`\delta_0 \to 0`, like :math:`\ln(1/\delta_0)`. That is a property of
+    every system in this library, and it is *not* a property of the atmosphere:
+    a system with a spectrum of scales has a **finite** limit that no
+    observation accuracy defeats (:func:`cascade_contamination_time`, and
+    chapter 12). The law transfers up the hierarchy; the unboundedness does not
+    survive the addition of a scale spectrum.
+
+    And :math:`\lambda` is not the only number that matters. Across Lorenz 96
+    from eight to forty variables :math:`\lambda_1` stays within 13 % while the
+    number of unstable directions grows from 2 to 13 -- so a low-order model can
+    get this law exactly right and still be wrong about the *dimension* of the
+    forecast error, which is what sets the ensemble size (chapter 19).
+    """
+    if float(rate) <= 0.0:
+        return float("nan")
+    ratio = float(fraction) * float(saturation) / float(delta0)
+    if ratio <= 1.0:
+        return 0.0
+    return float(np.log(ratio) / float(rate))
 

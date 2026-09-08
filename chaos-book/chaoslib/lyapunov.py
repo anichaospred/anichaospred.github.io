@@ -37,6 +37,7 @@ __all__ = [
     "doubling_time",
     "kaplan_yorke_dimension",
     "ks_entropy",
+    "unstable_dimension",
 ]
 
 
@@ -364,3 +365,24 @@ def ks_entropy(exponents: Array) -> float:
     """
     lam = np.asarray(exponents, dtype=float)
     return float(lam[lam > 0.0].sum())
+
+
+def unstable_dimension(spectrum: Array) -> int:
+    r"""Number of positive Lyapunov exponents: the dimension of the unstable
+    subspace.
+
+    The count, not the size, of the growing directions -- and a different thing
+    from :func:`kaplan_yorke_dimension`, which measures the attractor. This is
+    how many independent directions a perturbation can grow in, so it is what
+    bounds the rank an ensemble must span (chapter 19) and how many singular
+    vectors there are to compute (chapter 16).
+
+    It is also the quantity a low-order model gets most wrong. Measured on
+    Lorenz 96 at :math:`F = 8`, it grows roughly in proportion to the number of
+    variables -- 2, 3, 7, 13 at :math:`N = 8, 12, 20, 40` -- while
+    :math:`\lambda_1` stays within 13 % of 1.57 across the same range. **The
+    rate transfers down the hierarchy and the dimension does not**, which is
+    chapter 3's second result.
+    """
+    return int((np.asarray(spectrum, dtype=float) > 0.0).sum())
+

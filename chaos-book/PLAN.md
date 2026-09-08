@@ -92,11 +92,26 @@ start and no link is dead.
    measured $C\,\Delta x/c$ with $C = 0.843$–0.911 (8 % over a factor of 4 in $c$),
    the wind barely entering, so filtering it out is worth 170 → 16 steps for six
    hours. *Knob:* spurious wind, extrapolation interval, mean depth.
-3. **The hierarchy of models** — From the logistic map to CESM: what each rung is
-   for, and the argument that a three-variable model can teach something true about a
-   $10^9$-variable one. *Notebook:* the same predictability diagnostic (doubling
-   time, normalised) computed across the logistic map, L63, L96 and 2-D turbulence.
-   *Knob:* which rung.
+3. ★ **The hierarchy of models** — The book's organising claim, stated so it can be
+   falsified and then measured: **dimensionless relationships transfer between rungs,
+   dimensional constants do not, and some properties exist at no rung below a
+   particular structure.** All three are measured. **What transfers**:
+   $\lambda_1 T = \ln(f\delta_\infty/\delta_0)$ holds to **9.2 %** across the
+   logistic map (1 variable, discrete), Lorenz 63 (3) and Lorenz 96 at 12 and 40, over
+   six decades of initial error, with no fitted constant — the collapse of four splayed
+   error curves onto one when time is measured in e-folds. **What does not**: across
+   L96 from $N=8$ to $40$, $\lambda_1$ moves 13 % while the unstable dimension goes
+   2 → 13 (0.34 per variable) and $D_{KY}$ grows at 0.68 per variable, so a small model
+   can have the right rate and be wrong about the *size* of the problem — which is what
+   sets ensemble size (ch. 19), observation count, and how many singular vectors matter
+   (ch. 16); Lorenz 63, with one unstable direction, does not contain those questions.
+   **Where the ladder breaks**: a finite predictability limit needs a scale spectrum —
+   ten decades of initial accuracy buy 7.29 TU at $\alpha = 0$ and **0.001** at
+   $\alpha = 2/3$ — so the subject's most famous claim is a property no low-order
+   system here has, and two-scale L96 does not acquire it by having two rungs (ch. 12's
+   0.145 against 0.148 TU per decade). Every rung's exponents sum to the exact
+   divergence of the flow to parts in $10^5$. *Knob:* which rung, initial-error
+   amplitude. †
 
 ### Part II — From regular motion to chaos
 
@@ -511,17 +526,25 @@ Pyodide build every reader's browser receives.
 
 | | Count |
 |---|---|
-| Chapters live | **26** (1–2, 4–27) |
-| Chapters stubbed | 5 |
+| Chapters live | **27** (1–27) |
+| Chapters stubbed | 4 |
 | `chaoslib` modules | 16 |
-| `chaoslib` tests | 320, all passing |
+| `chaoslib` tests | 326, all passing |
 
 **Next chapters, in priority order** — each already has most of its material in hand:
 
-1. **Ch. 3** (the hierarchy of models) — mostly synthesis across systems already
-   present, and the chapter the book's thesis rests on. `chaoslib` now spans maps,
-   Lorenz 63/96, shallow water, 2-D turbulence and a coupled Earth-system hierarchy,
-   so every rung it needs to compare exists and is tested.
+**Parts I to VI are complete.** What remains is Part VII (chapters 28 and 29) and
+the optional, terminal Part VIII (chapters 30 and 31).
+
+1. **Ch. 29** (machine learning and data-driven prediction) — the most substantial of
+   the four, and the one with the most material in hand: chapter 3's census gives the
+   diagnostics an emulator has to reproduce ($\lambda_1$, the unstable dimension, the
+   horizon law), so "does a learned model inherit the right dynamics" is directly
+   measurable rather than rhetorical.
+2. **Ch. 28** (has predictability changed over time?) — chapter 25's ramped system and
+   chapter 26's hierarchy both already move parameters, so this is a sweep over them
+   with chapter 7's finite-time exponents as the diagnostic.
+3. **Ch. 30 and 31** (Part VIII, optional) — ergodic theory and the Koopman operator.
 
 ### A second decision on record: splitting chapter 20
 
