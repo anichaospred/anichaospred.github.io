@@ -73,12 +73,25 @@ start and no link is dead.
    Part VI in one number. Care taken and recorded: averaged over 32 starts because a
    single start is not monotone, with a *measured* estimator noise floor of 0.0097 nats
    that the smallest forcing signal sits only 1.5× above. *Knob:* lead time.
-2. **A short history of numerical weather prediction** — Richardson's forecast
-   factory and why his 1922 hand-computation failed; Bjerknes' programme; the 1950
-   ENIAC barotropic forecasts; the growth of operational skill. *Notebook:* the
-   Richardson problem — integrate an unbalanced initial state and watch spurious
-   gravity waves swamp the signal, then initialise it in balance. *Knob:* imbalance
-   amplitude.
+2. ★ **A short history of numerical weather prediction** — Richardson's 1922
+   hand-computation, why it failed, and the two inventions that had to follow.
+   1-D rotating shallow water, whose linear dispersion relation
+   $\omega^2 = f^2 + gHk^2$ is measured to **0.05 %** (spectral derivatives, so it
+   is exact to round-off rather than accurate to a stencil) and whose balanced state
+   is **exactly** steady — $|\partial_t u| \sim 10^{-19}$ and a six-hour drift of
+   identically zero, which is one dimension being kind and the chapter says so.
+   **The sharper diagnosis**: 1 m/s of spurious divergent wind forces 9.18 hPa/h,
+   exactly linear in the wind, so Richardson's 145 hPa needed only ~2.6 m/s — his
+   tendency was *real*, and the error was extrapolating an oscillation. A tendency
+   $A\cos\omega t$ gives a change bounded by $A/\omega$ for ever while $AT$ grows
+   without limit; the bound holds to **2.7 %**, and at 6 h the extrapolation is 43×
+   the truth. **A small pressure tendency is not balance**: the height equation is a
+   flux divergence, so rotational imbalance gives *exactly* zero initial tendency and
+   still a 29.3 hPa six-hour error — the failure mode still missed by
+   divergence-based balance checks. **And the fast mode sets the timestep**:
+   measured $C\,\Delta x/c$ with $C = 0.843$–0.911 (8 % over a factor of 4 in $c$),
+   the wind barely entering, so filtering it out is worth 170 → 16 steps for six
+   hours. *Knob:* spurious wind, extrapolation interval, mean depth.
 3. **The hierarchy of models** — From the logistic map to CESM: what each rung is
    for, and the argument that a three-variable model can teach something true about a
    $10^9$-variable one. *Notebook:* the same predictability diagnostic (doubling
@@ -498,15 +511,17 @@ Pyodide build every reader's browser receives.
 
 | | Count |
 |---|---|
-| Chapters live | **25** (1, 4–27) |
-| Chapters stubbed | 6 |
-| `chaoslib` modules | 15 |
-| `chaoslib` tests | 311, all passing |
+| Chapters live | **26** (1–2, 4–27) |
+| Chapters stubbed | 5 |
+| `chaoslib` modules | 16 |
+| `chaoslib` tests | 320, all passing |
 
 **Next chapters, in priority order** — each already has most of its material in hand:
 
-1. **Ch. 2 and 3** (Part I) — ch. 2 needs a shallow-water balance system in `chaoslib`;
-   ch. 3 is mostly synthesis across systems already present.
+1. **Ch. 3** (the hierarchy of models) — mostly synthesis across systems already
+   present, and the chapter the book's thesis rests on. `chaoslib` now spans maps,
+   Lorenz 63/96, shallow water, 2-D turbulence and a coupled Earth-system hierarchy,
+   so every rung it needs to compare exists and is tested.
 
 ### A second decision on record: splitting chapter 20
 
