@@ -36,6 +36,7 @@ from chaoslib import (
     lyapunov,
     maps,
     plotting,
+    shallowwater,
     spatial,
     systems,
     turbulence,
@@ -5000,4 +5001,303 @@ def test_emergent_constraint_reports_no_narrowing_when_there_is_none():
         ensemble.emergent_constraint([1.0, 2.0], [1.0, 2.0, 3.0], 1.0)
     with pytest.raises(ValueError):
         ensemble.emergent_constraint([1.0, 2.0], [1.0, 2.0], 1.0)
+
+
+# ==========================================================================
+# Chapter 2: Richardson's problem -- 1-D rotating shallow water
+# ==========================================================================
+SW_DEPTH, SW_F, SW_G = 8000.0, 1.0e-4, 9.81
+
+
+def _sw_height(grid, amplitude=120.0, mode=4, depth=SW_DEPTH):
+    return depth + amplitude * np.sin(
+        2.0 * np.pi * mode * grid["x"] / grid["length"]
+    )
+
+
+def test_geostrophic_balance_is_an_exact_steady_state():
+    r"""With :math:`u \equiv 0` and :math:`fv = g\partial_x h` every tendency
+    vanishes *identically* -- nothing is linearised and no amplitude is assumed
+    small. Asserted at round-off, and then integrated for six hours to show the
+    steadiness is real and not an artefact of evaluating the tendency once."""
+    grid = shallowwater.shallow_water_grid(128, 1.0e7)
+    for amplitude in (10.0, 120.0, 600.0):
+        height = _sw_height(grid, amplitude)
+        state = shallowwater.geostrophic_balance(
+            height, grid, coriolis=SW_F, gravity=SW_G
+        )
+        du, dv, dh = shallowwater.shallow_water_split(
+            shallowwater.shallow_water_1d(
+                0.0, state, grid, coriolis=SW_F, gravity=SW_G
+            ),
+            grid,
+        )
+        scale = SW_G * np.abs(height).max() * grid["k"].max()
+        assert np.abs(du).max() < 1e-15 * scale
+        assert np.abs(dv).max() == 0.0
+        assert np.abs(dh).max() == 0.0
+
+    state = shallowwater.geostrophic_balance(
+        _sw_height(grid), grid, coriolis=SW_F, gravity=SW_G
+    )
+    run = integrate.rk4(
+        shallowwater.shallow_water_1d, state,
+        integrate.trajectory_grid(6 * 3600.0, 60.0),
+        grid=grid, coriolis=SW_F, gravity=SW_G,
+    )
+    _, _, h0 = shallowwater.shallow_water_split(run[0], grid)
+    _, _, h1 = shallowwater.shallow_water_split(run[-1], grid)
+    assert np.abs(h1 - h0).max() < 1e-9      # metres, over six hours
+
+
+def test_inertia_gravity_dispersion_relation_is_exact():
+    r""":math:`\omega^2 = f^2 + gHk^2`, measured from the zero crossings of a
+    small-amplitude wave. Spectral derivatives make this exact rather than
+    accurate to the order of a stencil, so the agreement is to parts in
+    :math:`10^4`."""
+    grid = shallowwater.shallow_water_grid(128, 1.0e7)
+    for mode in (2, 4, 8):
+        k = 2.0 * np.pi * mode / grid["length"]
+        omega = float(
+            shallowwater.inertia_gravity_frequency(
+                k, SW_DEPTH, SW_F, SW_G
+            )
+        )
+        period = 2.0 * np.pi / omega
+        height = _sw_height(grid, amplitude=1.0, mode=mode)
+        state = shallowwater.shallow_water_state(
+            np.zeros(grid["n"]), np.zeros(grid["n"]), height
+        )
+        times = integrate.trajectory_grid(12.0 * period, period / 200.0)
+        run = integrate.rk4(
+            shallowwater.shallow_water_1d, state, times,
+            grid=grid, coriolis=SW_F, gravity=SW_G,
+        )
+        series = run[:, 0] - run[:, 0].mean()
+        crossings = np.where(np.diff(np.signbit(series)))[0]
+        assert crossings.size > 5
+        slope = np.polyfit(np.arange(crossings.size), times[crossings], 1)[0]
+        assert np.pi / slope == pytest.approx(omega, rel=2e-3)
+
+    # the floor: no inertia-gravity wave is slower than f
+    assert float(
+        shallowwater.inertia_gravity_frequency(0.0, SW_DEPTH, SW_F, SW_G)
+    ) == pytest.approx(SW_F)
+    assert np.all(
+        np.diff(
+            shallowwater.inertia_gravity_frequency(
+                np.array([0.0, 1e-6, 1e-5, 1e-4]), SW_DEPTH, SW_F, SW_G
+            )
+        )
+        > 0
+    )
+
+
+def test_mass_is_conserved_exactly_by_the_flux_form():
+    r"""A spectral derivative of a periodic field has zero mean, so
+    :math:`\partial_t \int h = -\int\partial_x(hu) = 0` to round-off at every
+    step. This is a sharp check that the height equation is still in flux form
+    and has not been rewritten as :math:`-u\partial_x h - h\partial_x u`, which
+    conserves mass only to truncation error."""
+    grid = shallowwater.shallow_water_grid(128, 1.0e7)
+    state = shallowwater.geostrophic_balance(
+        _sw_height(grid), grid, coriolis=SW_F, gravity=SW_G
+    )
+    state = state.copy()
+    state[: grid["n"]] = 3.0 * np.cos(
+        2.0 * np.pi * 4 * grid["x"] / grid["length"]
+    )
+    run = integrate.rk4(
+        shallowwater.shallow_water_1d, state,
+        integrate.trajectory_grid(6 * 3600.0, 60.0),
+        grid=grid, coriolis=SW_F, gravity=SW_G,
+    )
+    mass = shallowwater.shallow_water_mass(run, grid)
+    assert np.abs(mass / mass[0] - 1.0).max() < 1e-12
+
+
+def test_height_tendency_responds_only_to_the_divergent_wind():
+    """The point that makes "the pressure tendency is small" a different claim
+    from "the state is balanced". A state with no divergence has *exactly* zero
+    height tendency however wrong its rotational wind is; a spurious divergent
+    wind gives a tendency exactly proportional to it."""
+    grid = shallowwater.shallow_water_grid(128, 1.0e7)
+    height = _sw_height(grid)
+    balanced = shallowwater.geostrophic_balance(
+        height, grid, coriolis=SW_F, gravity=SW_G
+    )
+
+    # rotational imbalance: no height tendency at all
+    for factor in (0.0, 0.5, 2.0):
+        state = balanced.copy()
+        state[grid["n"]: 2 * grid["n"]] *= factor
+        _, _, dh = shallowwater.shallow_water_split(
+            shallowwater.shallow_water_1d(
+                0.0, state, grid, coriolis=SW_F, gravity=SW_G
+            ),
+            grid,
+        )
+        assert np.abs(dh).max() == 0.0
+
+    # divergent imbalance: exactly linear in the spurious wind
+    reference = None
+    for wind in (1.0, 2.0, 5.0):
+        state = balanced.copy()
+        state[: grid["n"]] = wind * np.cos(
+            2.0 * np.pi * 4 * grid["x"] / grid["length"]
+        )
+        _, _, dh = shallowwater.shallow_water_split(
+            shallowwater.shallow_water_1d(
+                0.0, state, grid, coriolis=SW_F, gravity=SW_G
+            ),
+            grid,
+        )
+        peak = float(np.abs(dh).max())
+        if reference is None:
+            reference = peak
+        else:
+            assert peak / reference == pytest.approx(wind, rel=1e-6)
+    assert reference is not None and reference > 0.0
+
+
+def test_an_oscillating_tendency_is_bounded_by_amplitude_over_frequency():
+    r"""Richardson's error, as an inequality. A tendency
+    :math:`A\cos\omega t` produces a change bounded by :math:`A/\omega` for
+    ever, while extrapolating it linearly gives :math:`AT`. So the
+    extrapolation is wrong by a factor of order :math:`\omega T` -- and at the
+    inertia-gravity period of a couple of hours against a six-hour forecast,
+    that is an order of magnitude."""
+    grid = shallowwater.shallow_water_grid(128, 1.0e7)
+    mode = 4
+    k = 2.0 * np.pi * mode / grid["length"]
+    omega = float(
+        shallowwater.inertia_gravity_frequency(k, SW_DEPTH, SW_F, SW_G)
+    )
+    state = shallowwater.geostrophic_balance(
+        _sw_height(grid), grid, coriolis=SW_F, gravity=SW_G
+    ).copy()
+    state[: grid["n"]] = 1.0 * np.cos(
+        2.0 * np.pi * mode * grid["x"] / grid["length"]
+    )
+    _, _, dh0 = shallowwater.shallow_water_split(
+        shallowwater.shallow_water_1d(
+            0.0, state, grid, coriolis=SW_F, gravity=SW_G
+        ),
+        grid,
+    )
+    amplitude = float(np.abs(dh0).max())
+    run = integrate.rk4(
+        shallowwater.shallow_water_1d, state,
+        integrate.trajectory_grid(12 * 3600.0, 30.0),
+        grid=grid, coriolis=SW_F, gravity=SW_G,
+    )
+    _, _, h = shallowwater.shallow_water_split(run, grid)
+    excursion = float(np.abs(h - h[0]).max())
+    bound = amplitude / omega
+    assert excursion == pytest.approx(bound, rel=0.10)
+    # and the linear extrapolation over six hours is far larger than the truth
+    extrapolated = amplitude * 6 * 3600.0
+    assert extrapolated > 10.0 * excursion
+
+
+def test_the_timestep_is_set_by_the_wave_speed_not_the_wind():
+    r""":func:`cfl_timestep` is stable and three times it is not, at two depths
+    a factor of sixteen apart in :math:`gH` -- so the threshold really does
+    track :math:`\sqrt{gH}`. The measured Courant constant 0.87 is what the
+    default encodes."""
+    grid = shallowwater.shallow_water_grid(64, 1.0e7)
+
+    def blows_up(dt, depth, steps=250):
+        height = _sw_height(grid, amplitude=120.0, depth=depth)
+        state = shallowwater.geostrophic_balance(
+            height, grid, coriolis=SW_F, gravity=SW_G
+        ).copy()
+        state[: grid["n"]] = 1.0 * np.cos(
+            2.0 * np.pi * 4 * grid["x"] / grid["length"]
+        )
+        reference = float(np.abs(state[2 * grid["n"]:] - depth).max())
+        current = state
+        for _ in range(steps):
+            current = integrate.rk4(
+                shallowwater.shallow_water_1d, current,
+                np.array([0.0, dt]), grid=grid,
+                coriolis=SW_F, gravity=SW_G,
+            )[-1]
+            if not np.isfinite(current).all():
+                return True
+            if float(np.abs(current[2 * grid["n"]:] - depth).max()) > 20.0 * reference:
+                return True
+        return False
+
+    for depth in (SW_DEPTH, SW_DEPTH / 16.0):
+        limit = shallowwater.cfl_timestep(grid, depth=depth, wind=30.0)
+        assert not blows_up(0.9 * limit, depth)
+        assert blows_up(3.0 * limit, depth)
+
+    # the wave speed dominates: quadrupling the wind barely moves the limit,
+    # while quadrupling c quarters it
+    slow = shallowwater.cfl_timestep(grid, depth=SW_DEPTH, wind=10.0)
+    fast = shallowwater.cfl_timestep(grid, depth=SW_DEPTH, wind=40.0)
+    assert 0.85 < fast / slow < 1.0
+    assert shallowwater.cfl_timestep(
+        grid, depth=SW_DEPTH / 16.0, wind=0.0
+    ) == pytest.approx(
+        4.0 * shallowwater.cfl_timestep(grid, depth=SW_DEPTH, wind=0.0), rel=1e-9
+    )
+    # filtering the wave out leaves the wind, an order of magnitude longer step
+    filtered = shallowwater.cfl_timestep(grid, depth=0.0, wind=30.0)
+    full = shallowwater.cfl_timestep(grid, depth=SW_DEPTH, wind=30.0)
+    assert filtered / full == pytest.approx(
+        (shallowwater.gravity_wave_speed(SW_DEPTH) + 30.0) / 30.0, rel=1e-9
+    )
+    assert np.isinf(shallowwater.cfl_timestep(grid, depth=0.0, wind=0.0))
+
+
+def test_shallow_water_helpers_round_trip():
+    """The state layout, the derived scales, and the pressure convention."""
+    grid = shallowwater.shallow_water_grid(32, 4.0e6)
+    assert grid["dx"] == pytest.approx(125000.0)
+    assert grid["x"].size == 32 and grid["k"].size == 17
+    u = np.arange(32.0)
+    v = -np.arange(32.0)
+    h = np.full(32, 8000.0)
+    state = shallowwater.shallow_water_state(u, v, h)
+    ru, rv, rh = shallowwater.shallow_water_split(state, grid)
+    assert np.array_equal(ru, u) and np.array_equal(rv, v)
+    assert np.array_equal(rh, h)
+
+    assert shallowwater.gravity_wave_speed(8000.0) == pytest.approx(280.1428, abs=1e-3)
+    assert shallowwater.rossby_radius(8000.0, 1.0e-4) == pytest.approx(
+        shallowwater.gravity_wave_speed(8000.0) / 1.0e-4
+    )
+    assert shallowwater.surface_pressure_change(1.0, 8000.0) == pytest.approx(0.125)
+    assert shallowwater.shallow_water_mass(state, grid) == pytest.approx(
+        8000.0 * 4.0e6
+    )
+    energy = shallowwater.shallow_water_energy(state, grid)
+    assert energy > 0.0
+
+
+def test_energy_drift_measures_the_integrator_not_the_physics():
+    """Energy is conserved by the continuous equations, so its drift is a
+    timestep diagnostic. Halving the step must reduce the drift sharply -- RK4
+    is fourth order, so by a large factor rather than by two."""
+    grid = shallowwater.shallow_water_grid(64, 1.0e7)
+    state = shallowwater.geostrophic_balance(
+        _sw_height(grid), grid, coriolis=SW_F, gravity=SW_G
+    ).copy()
+    state[: grid["n"]] = 2.0 * np.cos(
+        2.0 * np.pi * 4 * grid["x"] / grid["length"]
+    )
+    drifts = []
+    for dt in (200.0, 100.0):
+        run = integrate.rk4(
+            shallowwater.shallow_water_1d, state,
+            integrate.trajectory_grid(3 * 3600.0, dt),
+            grid=grid, coriolis=SW_F, gravity=SW_G,
+        )
+        energy = shallowwater.shallow_water_energy(run, grid)
+        drifts.append(float(np.abs(energy / energy[0] - 1.0).max()))
+    assert drifts[0] > drifts[1]
+    assert drifts[1] < 1e-6
 
