@@ -450,10 +450,31 @@ start and no link is dead.
 28. **Has predictability changed over time?** — Non-stationary predictability in a
     changing climate; separating a trend in skill from a trend in the underlying
     predictability.
-29. **Machine learning and data-driven prediction** — Do learned emulators inherit
-    the right Lyapunov spectrum and error-growth rate? Stability of long rollouts.
-    *Connects to* the `ai-models-sensitivity` work. *Notebook:* train a small
-    surrogate on L96 and compare its spectrum with the truth's.
+29. ★ **Machine learning and data-driven prediction** — Chapter 3's census turned on
+    a learned model. The emulator is a **reservoir computer**: a fixed random network
+    driven by Lorenz 96 with a linear readout fitted by ridge regression, so training
+    is one linear solve and its **tangent map is analytic** — which is what lets its
+    own Lyapunov spectrum be computed by chapter 7's algorithm rather than estimated.
+    **The sceptical story is measurably wrong**: a readout fitted only to one-step
+    increments reproduces the leading eight exponents to **1.5–4.1 %**, including the
+    neutral direction at $+0.00072$ (0.05 % of $\lambda_1$), with rollouts stable over
+    20,000 steps and climatology within 1.3 %. **Model error is not initial-condition
+    error**: a step-1 error of $7.9\times10^{-5}$ would give the truth 8.11 TU of skill
+    by chapter 3's law, and the emulator gets 2.87 — the error is re-injected every
+    step, so the law is an upper bound for a learned model. **One loud failure**, the
+    echo state property: at $\rho(\mathbf{W}) = 1.4$ the rollout diverges after 2,110
+    steps, and that is checkable from the untrained weights alone. **One quiet one**:
+    a configuration with climatology within 1.3 % and a spectrum wrong by 23 %; the
+    checkable diagnostics correlate with spectrum error at +0.77 but cannot rank the
+    models that pass. **And the failure that does not go away is the count, not the
+    rates**: every configuration resolves $\lambda_3$ to under 0.6 % of $\lambda_1$
+    and two of eight get its *sign* wrong, reporting 2 unstable directions instead of
+    3 — a discrete functional of a quantity that is zero, so no accuracy fixes it, and
+    chapter 3 identified exactly that quantity as the one setting ensemble size. The
+    deepest cost is verifiability: $\sum_i\lambda_i = \mathrm{tr}\,\mathbf{J}$
+    validated every spectrum in this book and **has no analogue for a learned model**.
+    *Connects to* the `ai-models-sensitivity` work. *Knob:* reservoir size, spectral
+    radius, training length.
 
 ### Part VIII — Structure (optional, terminal)
 
@@ -526,25 +547,24 @@ Pyodide build every reader's browser receives.
 
 | | Count |
 |---|---|
-| Chapters live | **27** (1–27) |
-| Chapters stubbed | 4 |
-| `chaoslib` modules | 16 |
-| `chaoslib` tests | 326, all passing |
+| Chapters live | **28** (1–27, 29) |
+| Chapters stubbed | 3 |
+| `chaoslib` modules | 17 |
+| `chaoslib` tests | 333, all passing |
 
 **Next chapters, in priority order** — each already has most of its material in hand:
 
 **Parts I to VI are complete.** What remains is Part VII (chapters 28 and 29) and
 the optional, terminal Part VIII (chapters 30 and 31).
 
-1. **Ch. 29** (machine learning and data-driven prediction) — the most substantial of
-   the four, and the one with the most material in hand: chapter 3's census gives the
-   diagnostics an emulator has to reproduce ($\lambda_1$, the unstable dimension, the
-   horizon law), so "does a learned model inherit the right dynamics" is directly
-   measurable rather than rhetorical.
-2. **Ch. 28** (has predictability changed over time?) — chapter 25's ramped system and
-   chapter 26's hierarchy both already move parameters, so this is a sweep over them
-   with chapter 7's finite-time exponents as the diagnostic.
-3. **Ch. 30 and 31** (Part VIII, optional) — ergodic theory and the Koopman operator.
+1. **Ch. 28** (has predictability changed over time?) — the last chapter of Part VII.
+   Chapter 25's ramped Lorenz 63 and chapter 26's reservoir hierarchy both already move
+   parameters, and chapter 7's finite-time exponents are the natural diagnostic, so
+   this is a sweep over machinery that exists. Chapter 29's census is also reusable:
+   "has predictability changed" is the same question asked of a system whose parameters
+   move rather than of a model that was fitted.
+2. **Ch. 30 and 31** (Part VIII, optional and terminal) — ergodic theory and invariant
+   measures, and the Koopman operator.
 
 ### A second decision on record: splitting chapter 20
 

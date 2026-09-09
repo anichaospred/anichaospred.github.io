@@ -33,6 +33,7 @@ from chaoslib import (
     errorgrowth,
     information,
     integrate,
+    learning,
     lyapunov,
     maps,
     plotting,
@@ -5441,4 +5442,217 @@ def test_a_finite_predictability_limit_needs_a_spectrum_of_scales():
     assert flat[-1] - flat[0] > 5.0                   # and keeps paying
     # the contrast is the point: ten decades buy nothing against several units
     assert (flat[-1] - flat[0]) > 100.0 * (max(deep) - min(deep))
+
+
+# ==========================================================================
+# Chapter 29: a learned emulator, and whether it inherits the dynamics
+# ==========================================================================
+def _l96_training_data(n_steps=12000, dt=0.01, sites=8, forcing=8.0):
+    rng = np.random.default_rng(0)
+    start = systems.lorenz96_uniform_state(forcing, sites) + rng.normal(
+        0.0, 0.5, sites
+    )
+    spun = integrate.rk4(
+        systems.lorenz96, start, integrate.trajectory_grid(150.0, 0.01),
+        forcing=forcing,
+    )
+    return integrate.rk4(
+        systems.lorenz96, spun[-1],
+        integrate.trajectory_grid(n_steps * dt, dt), forcing=forcing,
+    )
+
+
+def _train_emulator(data, n_reservoir=300, ridge=1e-5, wash=500, **kwargs):
+    scaling = learning.standardiser(data)
+    network = learning.echo_state_network(
+        data.shape[1], n_reservoir=n_reservoir, **kwargs
+    )
+    states = learning.reservoir_drive(network, data[:-1], scaling)
+    readout = learning.fit_readout(
+        states[wash:], data[wash:-1], np.diff(data, axis=0)[wash:],
+        scaling, ridge=ridge,
+    )
+    return network, readout, scaling, states[-1]
+
+
+def test_reservoir_spectral_radius_is_exact_and_gives_the_echo_state_property():
+    r"""The radius is rescaled to the requested value to machine precision --
+    asserted because the stability of the whole emulator turns on it -- and
+    below one the reservoir forgets, which is what "echo state" means."""
+    for radius in (0.3, 0.4, 0.95, 1.4):
+        network = learning.echo_state_network(
+            4, n_reservoir=120, spectral_radius=radius, seed=2
+        )
+        measured = float(np.max(np.abs(np.linalg.eigvals(network["W"]))))
+        assert measured == pytest.approx(radius, rel=1e-12)
+
+    scaling = {"mean": 0.0, "sd": 1.0}
+    zeros = np.zeros((400, 4))
+    for radius, forgets in ((0.4, True), (1.4, False)):
+        network = learning.echo_state_network(
+            4, n_reservoir=120, spectral_radius=radius, seed=2
+        )
+        start = np.full(120, 0.5)
+        states = learning.reservoir_drive(network, zeros, scaling, initial=start)
+        decayed = float(np.abs(states[-1]).max())
+        assert (decayed < 1e-10) is forgets
+
+
+def test_readout_recovers_an_exactly_linear_target():
+    """With no regularisation the fit is ordinary least squares, so a target
+    that really is a linear function of the features is recovered exactly."""
+    rng = np.random.default_rng(4)
+    scaling = {"mean": 0.0, "sd": 1.0}
+    states = rng.normal(size=(600, 30))
+    inputs = rng.normal(size=(600, 3))
+    features = learning.readout_features(states, inputs, scaling)
+    assert features.shape == (600, 30 + 30 + 3 + 1)
+    truth = rng.normal(size=(features.shape[1], 3))
+    readout = learning.fit_readout(
+        states, inputs, features @ truth, scaling, ridge=0.0
+    )
+    assert np.allclose(readout, truth, atol=1e-8)
+    # and regularisation shrinks it towards zero, monotonically
+    norms = [
+        float(
+            np.linalg.norm(
+                learning.fit_readout(
+                    states, inputs, features @ truth, scaling, ridge=g
+                )
+            )
+        )
+        for g in (1e-6, 1.0, 1e3)
+    ]
+    assert norms[0] > norms[1] > norms[2]
+
+
+def test_esn_tangent_matches_finite_differences():
+    r"""The test the chapter's headline depends on. Chapter 29 compares the
+    emulator's Lyapunov spectrum with the truth's, and a subtly wrong tangent
+    would give a wrong spectrum that looked entirely sensible -- so the
+    analytic Jacobian is checked against central differences of the step map
+    itself, exactly as chapter 15 checks an adjoint."""
+    data = _l96_training_data(n_steps=4000)
+    network, readout, scaling, final = _train_emulator(data, n_reservoir=120)
+    rng = np.random.default_rng(6)
+    n_res, n_in = network["n_reservoir"], network["n_input"]
+
+    reservoir_state = final.copy()
+    u = data[-1].copy()
+    new_state, _ = learning.esn_step(
+        network, readout, reservoir_state, u, scaling
+    )
+    direction = rng.normal(size=(n_res + n_in, 3))
+    direction /= np.linalg.norm(direction, axis=0, keepdims=True)
+    analytic = learning.esn_tangent_apply(
+        network, readout, new_state, direction, scaling
+    )
+
+    for column in range(3):
+        d_res = direction[:n_res, column]
+        d_u = direction[n_res:, column]
+        best = np.inf
+        for epsilon in (1e-5, 1e-6, 1e-7):
+            plus = learning.esn_step(
+                network, readout, reservoir_state + epsilon * d_res,
+                u + epsilon * d_u, scaling,
+            )
+            minus = learning.esn_step(
+                network, readout, reservoir_state - epsilon * d_res,
+                u - epsilon * d_u, scaling,
+            )
+            finite = np.concatenate(
+                [plus[0] - minus[0], plus[1] - minus[1]]
+            ) / (2.0 * epsilon)
+            error = float(
+                np.linalg.norm(finite - analytic[:, column])
+                / np.linalg.norm(analytic[:, column])
+            )
+            best = min(best, error)
+        assert best < 1e-6, f"column {column}: relative error {best:.2e}"
+
+
+def test_esn_rollout_reports_divergence_by_stopping_early():
+    """A rollout that blows up returns a short trajectory rather than a long
+    one full of infinities, so its length is the diagnostic."""
+    data = _l96_training_data(n_steps=3000)
+    network, readout, scaling, final = _train_emulator(data, n_reservoir=120)
+    good, _ = learning.esn_rollout(
+        network, readout, final, data[-1], 200, scaling
+    )
+    assert good.shape == (201, data.shape[1])
+    assert np.isfinite(good).all()
+
+    exploding = readout * 500.0
+    short, _ = learning.esn_rollout(
+        network, exploding, final, data[-1], 2000, scaling
+    )
+    assert short.shape[0] < 2001
+    assert np.isfinite(short).all()      # what is returned is still usable
+
+
+def test_esn_spectrum_agrees_with_twin_trajectory_growth():
+    """Two independent routes to the emulator's leading exponent: Benettin on
+    its analytic tangent, and twin rollouts of the emulator perturbed in the
+    physical variable only. They measure the same thing and must agree."""
+    data = _l96_training_data(n_steps=30000)
+    network, readout, scaling, final = _train_emulator(
+        data, n_reservoir=400, wash=1000
+    )
+    spectrum = learning.esn_lyapunov_spectrum(
+        network, readout, final, data[-1], scaling, dt=0.01,
+        n_exponents=3, n_steps=8000, n_transient=1000,
+    )
+    assert np.isfinite(spectrum).all()
+    assert spectrum[0] > 0.0
+    assert np.all(np.diff(spectrum) <= 1e-9)      # ordered, as Benettin gives
+
+    synced, state = learning.esn_rollout(
+        network, readout, final, data[-1], 400, scaling
+    )
+    assert synced.shape[0] == 401
+    base, _ = learning.esn_rollout(
+        network, readout, state, synced[-1], 900, scaling
+    )
+    delta0 = 1e-7 * scaling["sd"]
+    kick = np.full(data.shape[1], delta0 / np.sqrt(data.shape[1]))
+    twin, _ = learning.esn_rollout(
+        network, readout, state, synced[-1] + kick, 900, scaling
+    )
+    assert base.shape[0] == twin.shape[0] == 901
+    separation = np.sqrt(((twin - base) ** 2).sum(axis=-1))
+    times = np.arange(separation.size) * 0.01
+    band = (separation > 30.0 * delta0) & (separation < 0.5 * scaling["sd"])
+    assert band.sum() > 20
+    fitted = float(np.polyfit(times[band], np.log(separation[band]), 1)[0])
+    assert fitted == pytest.approx(spectrum[0], rel=0.25)
+
+
+def test_a_trained_emulator_inherits_the_leading_exponent():
+    """The chapter's premise, at a size that fits in a test: an emulator fitted
+    only to one-step increments recovers the leading Lyapunov exponent of the
+    system that generated its training data.
+
+    The chapter measures the leading eight and finds a few per cent; this
+    asserts the first one to 20 %, which is what a 400-node reservoir on
+    30,000 steps supports."""
+    data = _l96_training_data(n_steps=30000)
+    truth = lyapunov.lyapunov_spectrum(
+        systems.lorenz96, systems.lorenz96_jacobian, data[0], dt=0.01,
+        t_final=400.0, t_transient=20.0, forcing=8.0,
+    )
+    network, readout, scaling, final = _train_emulator(
+        data, n_reservoir=400, wash=1000
+    )
+    rollout, _ = learning.esn_rollout(
+        network, readout, final, data[-1], 4000, scaling
+    )
+    assert rollout.shape[0] == 4001, "the emulator should not blow up"
+    assert float(rollout.std()) == pytest.approx(float(data.std()), rel=0.15)
+
+    spectrum = learning.esn_lyapunov_spectrum(
+        network, readout, final, data[-1], scaling, dt=0.01,
+        n_exponents=2, n_steps=10000, n_transient=1000,
+    )
+    assert spectrum[0] == pytest.approx(float(truth[0]), rel=0.20)
 
