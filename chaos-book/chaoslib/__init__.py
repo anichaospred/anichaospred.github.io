@@ -25,9 +25,15 @@ information  entropy, relative entropy and mutual information as predictability
 maps         bifurcation cascades, Feigenbaum universality, map Lyapunov exponents
 spatial      spectra, phase speeds and correlation lengths for fields on a ring
 turbulence   two-dimensional pseudospectral flow and its energy spectrum
+shallowwater one-dimensional rotating shallow water on a ring, spectrally
 adjoint      tangent-linear and adjoint propagators; singular vectors
 assimilate   3D-Var, 4D-Var, Kalman filter and EnKF on the low-order models
 ensemble     ensemble construction and probabilistic verification scores
+verification anomaly correlation, skill scores and forecast horizons
+earlywarning critical slowing down, escape times and early-warning indicators
+learning     a reservoir computer with an analytic tangent map
+nonstationary trends in predictability: attribution, and how long a record
+             has to be before one is detectable
 plotting     the book's semantic colour palette and Plotly styling helpers
 
 Pyodide note
@@ -43,16 +49,21 @@ from chaoslib import (
     adjoint,
     assimilate,
     dimension,
+    earlywarning,
     ensemble,
     errorgrowth,
     information,
     integrate,
+    learning,
     lyapunov,
     maps,
+    nonstationary,
     plotting,
+    shallowwater,
     spatial,
     systems,
     turbulence,
+    verification,
 )
 
 try:
@@ -64,15 +75,20 @@ __all__ = [
     "adjoint",
     "assimilate",
     "dimension",
+    "earlywarning",
     "ensemble",
     "errorgrowth",
     "information",
     "integrate",
+    "learning",
     "lyapunov",
     "maps",
+    "nonstationary",
     "plotting",
+    "shallowwater",
     "spatial",
-    "turbulence",
     "systems",
+    "turbulence",
+    "verification",
     "__version__",
 ]

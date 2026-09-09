@@ -447,9 +447,36 @@ start and no link is dead.
 
 ### Part VII — Frontiers
 
-28. **Has predictability changed over time?** — Non-stationary predictability in a
-    changing climate; separating a trend in skill from a trend in the underlying
-    predictability.
+28. ★ **Has predictability changed over time?** — Non-stationary predictability in a
+    changing climate, and the separation of a trend in *skill* from a trend in the
+    underlying *predictability*. Lorenz 96 at $N=40$ with the forcing ramped from
+    $F=6$ to $F=10$ over about fifty-five years, a **frozen** perfect-model forecasting
+    system, and an analysis error set by hand, so the system and the atmosphere are
+    independent knobs. **The question is ill-posed until an index is named**: over one
+    ramp $\lambda_1$ rises 102 %, $h_{KS}$ 158 %, $D_{KY}$ and the unstable dimension
+    27 %, the saturation 48 %, and the useful horizon falls 52 % — and even the
+    *convention* moves the trend 16 % (each epoch's own climatology against a fixed
+    absolute threshold, on the **same** forecasts). The horizon law splits the change
+    exactly into instability ($-1.79$ TU), amplitude ($+0.26$, a real gift: a fixed
+    absolute analysis error is a smaller *relative* error against a larger flow) and
+    accuracy. **A skill record is not a predictability record**: a 2×2 with the two
+    **reforecast** cells — a frozen system re-run on a period it never operated in —
+    divides the change exactly into system $+2.19$, climate $-1.96$ and an interaction
+    of $-1.21$ that the horizon law *predicts* to 13 % with no fitted constant. So
+    chapter 20's $\ln 10/\lambda_1$ per decade of analysis error is **not a constant**:
+    it falls from 10.4 to 5.1 days, and holding the horizon level costs 1.5–1.9 decades
+    of analysis-error reduction spent entirely on standing still. **The trend also
+    depends on the lead asked about** — 44 % at half a time unit rising to 102 % for
+    $\lambda_1$, because short-lead growth is non-normal and the flow becomes *less*
+    non-normal as it is forced, so $\lambda_1$ overstates the forecast-relevant change
+    twofold. Two honest negatives: the shift-share reports 100 % "dynamics" only
+    because **no** large-scale index predicts local instability in this model
+    ($|r| \le 0.13$ over seven candidates), so the occupancy mechanism cannot be posed
+    here; and the unstable dimension is **non-monotone** in the perfect model at 1,000
+    time units of averaging — chapter 29's fragile entry is fragile without any
+    learning at all. And the record must be long: the daily horizon has an integrated
+    autocorrelation time of 8 days, so 365 launches a year are worth 46 independent
+    cases, and a 2 %-per-decade trend needs 31 years.
 29. ★ **Machine learning and data-driven prediction** — Chapter 3's census turned on
     a learned model. The emulator is a **reservoir computer**: a fixed random network
     driven by Lorenz 96 with a linear readout fitted by ridge regression, so training
@@ -547,24 +574,17 @@ Pyodide build every reader's browser receives.
 
 | | Count |
 |---|---|
-| Chapters live | **28** (1–27, 29) |
-| Chapters stubbed | 3 |
-| `chaoslib` modules | 17 |
-| `chaoslib` tests | 333, all passing |
+| Chapters live | **29** (1–29) |
+| Chapters stubbed | 2 |
+| `chaoslib` modules | 18 |
+| `chaoslib` tests | 345, all passing |
 
-**Next chapters, in priority order** — each already has most of its material in hand:
+**Parts I to VII are complete.** What remains is the optional, terminal Part VIII.
 
-**Parts I to VI are complete.** What remains is Part VII (chapters 28 and 29) and
-the optional, terminal Part VIII (chapters 30 and 31).
-
-1. **Ch. 28** (has predictability changed over time?) — the last chapter of Part VII.
-   Chapter 25's ramped Lorenz 63 and chapter 26's reservoir hierarchy both already move
-   parameters, and chapter 7's finite-time exponents are the natural diagnostic, so
-   this is a sweep over machinery that exists. Chapter 29's census is also reusable:
-   "has predictability changed" is the same question asked of a system whose parameters
-   move rather than of a model that was fitted.
-2. **Ch. 30 and 31** (Part VIII, optional and terminal) — ergodic theory and invariant
-   measures, and the Koopman operator.
+1. **Ch. 30 and 31** (Part VIII, optional and terminal) — ergodic theory and invariant
+   measures, and the Koopman operator. Neither is on the critical path: the book's
+   thesis is fully carried by chapters 1–29, and Part VIII is structure rather than
+   application.
 
 ### A second decision on record: splitting chapter 20
 
