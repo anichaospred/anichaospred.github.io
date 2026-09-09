@@ -470,6 +470,96 @@ def lorenz96_critical_forcing(n: int = 40) -> tuple[float, int]:
     return float(1.0 / gain[best]), int(m[best])
 
 
+def lorenz96_ramped(
+    t: float,
+    x: Array,
+    forcing_start: float = 6.0,
+    forcing_rate: float = 0.004,
+) -> Array:
+    r"""Lorenz 96 with a one-way ramp in the forcing.
+
+    .. math::
+        F(t) = F_0 + r\,t
+
+    Chapter 25 ramped Lorenz 63's Rayleigh number to ask what a forced response
+    looks like; this ramps Lorenz 96's forcing to ask a different question --
+    whether the system's *predictability* changes as it is forced, and whether
+    that change could be detected from a forecast record.
+
+    With ``forcing_rate = 0`` this is :func:`lorenz96` bitwise: the forcing
+    enters as a single additive term, so no regrouping is involved and the
+    identity is trivial rather than delicate (contrast
+    :func:`lorenz63_ramped`, where it is not).
+
+    ``forcing_start`` may be an **array** broadcasting against ``x``'s leading
+    axes, which is what makes a bundle of forecasts launched at *different*
+    times integrable in one vectorised call: a member launched at absolute time
+    :math:`s` and integrated on a lead-time grid :math:`\tau` sees
+    :math:`F_0 + r(s+\tau)`, so passing ``forcing_start`` :math:`= F_0 + rs`
+    per member on a lead grid reproduces the absolute ramp exactly. Without
+    that, a non-stationary forecast experiment costs a Python loop over
+    launches.
+
+    The reason this is the right knob is an exact one. The trace of
+    :func:`lorenz96_jacobian` is :math:`-N` for **every** state and every
+    :math:`F`, so :math:`\sum_i \lambda_i = -N` no matter how far the ramp
+    goes: the ramp cannot change the total contraction rate of the flow, only
+    redistribute it. A rise in :math:`\lambda_1` is therefore always paid for
+    somewhere in the stable part of the spectrum, and "the system became more
+    unstable" is never the whole statement.
+    """
+    x = np.asarray(x, dtype=float)
+    forcing = (
+        np.asarray(forcing_start, dtype=float)
+        + np.asarray(forcing_rate, dtype=float) * t
+    )
+    return (
+        (np.roll(x, -1, axis=-1) - np.roll(x, 2, axis=-1))
+        * np.roll(x, 1, axis=-1)
+        - x
+        + forcing
+    )
+
+
+def lorenz96_ramp(
+    t: Array, forcing_start: float = 6.0, forcing_rate: float = 0.004
+) -> Array:
+    """The :math:`F(t)` that :func:`lorenz96_ramped` uses, for plotting."""
+    return float(forcing_start) + float(forcing_rate) * np.asarray(t, dtype=float)
+
+
+def lorenz96_energy_balance(
+    trajectory: Array, forcing: float = 8.0
+) -> tuple[float, float]:
+    r"""The two sides of Lorenz 96's exact stationary energy identity.
+
+    Multiplying :func:`lorenz96` by :math:`x_k` and summing over sites, the
+    quadratic terms telescope to zero on a cyclic chain, leaving
+
+    .. math::
+        \frac{\mathrm{d}}{\mathrm{d}t}\tfrac12\sum_k x_k^2
+            = -\sum_k x_k^2 + F\sum_k x_k .
+
+    On a statistically stationary attractor the left side has zero mean, so
+
+    .. math:: \langle x^2\rangle = F\,\langle x\rangle
+
+    **exactly**, for every :math:`F` and :math:`N`. Returns
+    ``(mean_square, forcing * mean)``, which agree to sampling error on a long
+    enough trajectory and disagree immediately if the integration is unstable,
+    the transient was not discarded, or the forcing passed here is not the one
+    that generated the trajectory.
+
+    Chapter 28 needs this because it compares climates at different
+    :math:`F` and the amplitude of the flow is one of the three things that
+    can move a forecast horizon. That amplitude is not free to be anything:
+    the identity ties the second moment to the first, so a climate cannot grow
+    in variance without also growing in mean.
+    """
+    traj = np.asarray(trajectory, dtype=float)
+    return float(np.mean(traj**2)), float(float(forcing) * np.mean(traj))
+
+
 def lorenz96_two_scale(
     t: float,
     state: Array,
