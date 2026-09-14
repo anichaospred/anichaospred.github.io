@@ -861,6 +861,104 @@ def henon_map(xy: Array, a: float = 1.4, b: float = 0.3) -> Array:
 
 
 # --------------------------------------------------------------------------
+# A system whose Koopman operator closes on three observables
+# --------------------------------------------------------------------------
+def slow_manifold(
+    t: float, x: Array, mu: float = -0.05, lam: float = -1.0
+) -> Array:
+    r"""The slow-manifold normal form,
+
+    .. math:: \dot x_1 = \mu x_1, \qquad \dot x_2 = \lambda(x_2 - x_1^2),
+
+    with :math:`\lambda \ll \mu < 0`: a fast variable slaved to a slow one,
+    which is the structure behind every quasi-equilibrium closure in
+    atmospheric modelling. Trajectories collapse onto the parabola
+    :math:`x_2 = x_1^2` on the fast timescale and then slide down it on the
+    slow one.
+
+    It is in this book for one reason: it is the standard example of a
+    nonlinear system whose **Koopman operator closes on a finite dictionary**.
+    The three observables :math:`\{x_1,\, x_2,\, x_1^2\}` span an exactly
+    invariant subspace, on which the dynamics is the linear system
+    :func:`slow_manifold_koopman_matrix` -- not approximately, but exactly, for
+    all time and all initial conditions. Chapter 31 uses it as the control
+    against which a chaotic system's dictionary is measured.
+
+    Vectorised over any leading ensemble axis.
+    """
+    x = np.asarray(x, dtype=float)
+    x1, x2 = x[..., 0], x[..., 1]
+    return np.stack(
+        [float(mu) * x1, float(lam) * (x2 - x1 * x1)], axis=-1
+    )
+
+
+def slow_manifold_koopman_matrix(
+    mu: float = -0.05, lam: float = -1.0
+) -> Array:
+    r"""The exact Koopman generator of :func:`slow_manifold` on the dictionary
+    :math:`g = (x_1,\, x_2,\, x_1^2)`:
+
+    .. math::
+        \mathbf{A} = \begin{pmatrix}
+            \mu & 0 & 0 \\ 0 & \lambda & -\lambda \\ 0 & 0 & 2\mu
+        \end{pmatrix},
+        \qquad \dot g = \mathbf{A}g .
+
+    Read the rows off the chain rule: :math:`\dot x_1 = \mu x_1`;
+    :math:`\dot x_2 = \lambda x_2 - \lambda x_1^2`; and
+    :math:`\frac{d}{dt}x_1^2 = 2x_1\dot x_1 = 2\mu x_1^2`. The third row is the
+    point -- the square of a state variable is *also* governed linearly, which
+    is why the dictionary closes.
+
+    Its eigenvalues are exactly :math:`\mu`, :math:`\lambda` and
+    :math:`2\mu`. The :math:`2\mu` is a **Koopman eigenvalue with no
+    counterpart in the Jacobian spectrum**: the spectrum of the linearised
+    *flow* has two entries and the spectrum of the linear operator on
+    observables has three, because products of eigenfunctions are
+    eigenfunctions and their eigenvalues add.
+    """
+    mu, lam = float(mu), float(lam)
+    return np.array(
+        [[mu, 0.0, 0.0], [0.0, lam, -lam], [0.0, 0.0, 2.0 * mu]]
+    )
+
+
+def slow_manifold_solution(
+    t: Array, x0: Array, mu: float = -0.05, lam: float = -1.0
+) -> Array:
+    r"""Closed-form solution of :func:`slow_manifold`,
+
+    .. math::
+        x_1(t) = x_1^0 e^{\mu t}, \qquad
+        x_2(t) = x_2^0 e^{\lambda t}
+                 + \frac{\lambda (x_1^0)^2}{\lambda - 2\mu}
+                   \left(e^{2\mu t} - e^{\lambda t}\right),
+
+    obtained with the integrating factor :math:`e^{-\lambda t}`. Exact, so it
+    tests the integrator and the Koopman matrix independently of each other.
+    Singular at :math:`\lambda = 2\mu`, the resonance where the two exponents
+    coincide and the solution acquires a secular :math:`t e^{\lambda t}` term;
+    the function raises there rather than returning a very large number.
+    """
+    t = np.asarray(t, dtype=float)
+    x0 = np.asarray(x0, dtype=float)
+    mu, lam = float(mu), float(lam)
+    if abs(lam - 2.0 * mu) < 1e-12:
+        raise ValueError(
+            "lam == 2*mu is the resonant case; the closed form is secular there"
+        )
+    x1_0, x2_0 = x0[..., 0], x0[..., 1]
+    shape = (t.size,) + np.shape(x1_0)
+    t_b = t.reshape((-1,) + (1,) * np.ndim(x1_0))
+    x1 = x1_0 * np.exp(mu * t_b)
+    x2 = x2_0 * np.exp(lam * t_b) + (lam * x1_0**2 / (lam - 2.0 * mu)) * (
+        np.exp(2.0 * mu * t_b) - np.exp(lam * t_b)
+    )
+    return np.stack([np.broadcast_to(x1, shape), np.broadcast_to(x2, shape)], axis=-1)
+
+
+# --------------------------------------------------------------------------
 # Bistability and tipping: the cusp/double-well normal form
 # --------------------------------------------------------------------------
 def double_well(t: float, x: Array, mu: float = 0.0) -> Array:

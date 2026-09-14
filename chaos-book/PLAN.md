@@ -537,9 +537,37 @@ start and no link is dead.
     for ensembles in climate projection, and chapter 28's failure in the language of
     the measure. *Knob:* averaging window, ensemble size at fixed budget, noise
     amplitude.
-31. **The Koopman operator** — Linear representations of nonlinear dynamics; modes
-    and eigenvalues; the connection to DMD. *Connects to* the `quantum-koopman-da`
-    work.
+31. ★ **The Koopman operator** — Every data-driven forecast system fits a *linear*
+    operator to a nonlinear atmosphere. The Koopman operator says that is exactly
+    right — $\mathcal{K}g = g\circ\mathcal{M}$ is linear in $g$ for any
+    $\mathcal{M}$, with no small parameter and no window of validity, unlike
+    chapter 15's TLM — and charges for it in dimension. **Finite closure happens**:
+    three observables reproduce the slow-manifold system exactly from data, closure
+    residual $5\times10^{-16}$, a $3\times3$ matrix for the whole nonlinear
+    trajectory, and a spectrum with **three** eigenvalues where the Jacobian has
+    two, because products of eigenfunctions are eigenfunctions. **But closure is a
+    property of the span, not the size**: adding $x_1x_2$ to a dictionary that
+    closes *breaks* it, since $\frac{d}{dt}(x_1x_2)$ leaks into $x_1^3$ — verified
+    against its closed form — and the monomial hierarchy never closes at any order,
+    so fifteen terms lose to three correct ones by seven orders of magnitude. On
+    Lorenz 63 the exchange rate is measured and poor: **251× the dimension buys 16×
+    the lead**, flattening to 6 % for the last tripling, with plain DMD worth 0.08
+    time units. **The failure is geometric, not dynamical** — the linear iteration
+    leaves the lifted manifold (44 % off within one time unit) and the drift and the
+    error rise together, which is why more observables stop helping. **Re-lifting
+    each step recovers 5.2× in lead and is not a linear model**, so the linearity
+    that motivated the whole construction is exactly what is traded for the
+    accuracy; even then its error grows at 1.55 per TU against
+    $\lambda_1 = 0.90$, model error re-injected every step exactly as chapter 29
+    measured for a reservoir. The two schemes fail oppositely: the linear rollout
+    decays to the climatological mean (optimal at infinite lead), the re-lifted one
+    drifts past climatology. **What survives is the spectrum**: the eigenvalue at
+    $1.00000000$ is chapter 30's invariant measure, the predicted autocorrelation
+    function is right to 0.028 over two time units, and chapter 30's
+    $\tau_{\rm int}$ comes back to 7 %. Koopman methods are spectral tools, and
+    trajectory forecasting asks for precisely what the truncation discards.
+    *Connects to* the `quantum-koopman-da` work. *Knob:* dictionary of observables,
+    rollout scheme, lift factor.
 
 > Part VIII is deliberately terminal and skippable. It rewards a reader who wants the
 > structure behind the results, without gating the main path.
@@ -604,17 +632,27 @@ Pyodide build every reader's browser receives.
 
 | | Count |
 |---|---|
-| Chapters live | **30** (1–30) |
-| Chapters stubbed | 1 |
-| `chaoslib` modules | 19 |
-| `chaoslib` tests | 362, all passing |
+| Chapters live | **31** (1–31) |
+| Chapters stubbed | 0 |
+| `chaoslib` modules | 20 |
+| `chaoslib` tests | 375, all passing |
 
-**Parts I to VII are complete, and Part VIII is begun.** One chapter remains.
+**The book is complete.** All thirty-one chapters of the plan are written, with no stubs
+remaining and no dead links in the table of contents.
 
-1. **Ch. 31** (Part VIII, optional and terminal) — the Koopman operator. Not on the
-   critical path: the book's thesis is fully carried by chapters 1–29, and Part VIII is
-   structure rather than application. Chapter 30 is written; chapter 31 would complete
-   the book as planned.
+What that leaves is maintenance and consolidation rather than new chapters:
+
+1. **The two decisions on record above are both discharged** — chapter 20 has been split,
+   and chapter 6 should still shrink to the attractor and the bifurcation now that
+   chapters 7, 17 and 22 exist to take its later sections. That is the one structural
+   edit still outstanding, and it edits a live chapter for coherence rather than
+   correctness.
+2. **`docs/chaoslib.md` has no sections for `earlywarning`, `learning` or
+   `shallowwater`** — three modules added by chapters 27, 29 and 2 without documentation.
+   Every other module is documented.
+3. **Citations.** Every chapter carries *[citation needed]* markers where a literature
+   value or a reference belongs. Filling them is the largest remaining task and the one
+   that cannot be done from inside the repository.
 
 ### A second decision on record: splitting chapter 20
 
