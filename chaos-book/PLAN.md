@@ -505,8 +505,38 @@ start and no link is dead.
 
 ### Part VIII — Structure (optional, terminal)
 
-30. **Ergodic theory and invariant measures** — Time averages vs. ensemble averages;
-    what "climate" means mathematically; when the two coincide.
+30. ★ **Ergodic theory and invariant measures** — A 500-year control run and a
+    100-member ensemble both claim to state "the climate". They estimate the same
+    object — the **invariant measure** — and agree to $W_1 = 0.20$ in $z$ against 1.02
+    for a Gaussian of identical mean and variance. That measure is **singular**: box
+    counting gives $h^{-1.94}$ where a uniform control through the same estimator
+    gives exactly $h^{-3}$, so it assigns probability one to a set of zero volume and
+    every climatological PDF is a coarse-graining. **Birkhoff gives no rate, and the
+    rate is observable-dependent**: measured by batch means on one trajectory,
+    $\tau_{\rm eff}$ is 1.008 for $x$ (the standard estimate is right to 2 %), 0.0098
+    for $z$ (wrong by 24×) and 0.0011 for $x^2$ (176×), so pinning $\langle x\rangle$
+    to $\pm0.05$ needs 25,300 time units where $\langle z\rangle$ needs 292 — **a
+    factor of 87 between two variables of the same run**. The cause is exact: for any
+    bounded $B$, $\overline{\dot B}_T = (B_T - B_0)/T$, giving four moment identities
+    that hold **with** their boundary terms at every window (a test of the integrator,
+    closing to $6\times10^{-4}$) and **without** them only in the limit — a
+    **convergence diagnostic needing no reference run**, and the chapter's one
+    operational takeaway. $\langle x\rangle = 0$ exactly by symmetry and is the
+    slowest quantity of all to arrive. **Ergodicity is not chaos**: a zero-exponent
+    rotation averages at $N^{-0.96}$ against the chaotic map's $N^{-0.51}$, beating it
+    twentyfold at $N=1000$, because mixing buys only independence. **At fixed cost one
+    long run wins**, by exactly the spin-up paid $M$ times (measured 1.92 against a
+    predicted 1.98 at $M=50$, over 2,000 repetitions) — **until the ergodic time
+    exceeds the record**, where the conclusion inverts: a 30 time-unit run of the noisy
+    double well is wrong by 0.91 and reports an error bar of 0.062, **15× overconfident
+    with nothing inside the run to give it away**, because the standard check measures
+    the within-well wobble (2.1 TU) and not the well-switching time (279 TU, against
+    Kramers' 263). And **under a trend there is no invariant measure at all**: the
+    trailing average is biased by exactly $-bT/2$, measured to 3 % at $T=400$, a bias
+    that grows with the window while the sampling noise falls — the structural argument
+    for ensembles in climate projection, and chapter 28's failure in the language of
+    the measure. *Knob:* averaging window, ensemble size at fixed budget, noise
+    amplitude.
 31. **The Koopman operator** — Linear representations of nonlinear dynamics; modes
     and eigenvalues; the connection to DMD. *Connects to* the `quantum-koopman-da`
     work.
@@ -574,17 +604,17 @@ Pyodide build every reader's browser receives.
 
 | | Count |
 |---|---|
-| Chapters live | **29** (1–29) |
-| Chapters stubbed | 2 |
-| `chaoslib` modules | 18 |
-| `chaoslib` tests | 345, all passing |
+| Chapters live | **30** (1–30) |
+| Chapters stubbed | 1 |
+| `chaoslib` modules | 19 |
+| `chaoslib` tests | 362, all passing |
 
-**Parts I to VII are complete.** What remains is the optional, terminal Part VIII.
+**Parts I to VII are complete, and Part VIII is begun.** One chapter remains.
 
-1. **Ch. 30 and 31** (Part VIII, optional and terminal) — ergodic theory and invariant
-   measures, and the Koopman operator. Neither is on the critical path: the book's
-   thesis is fully carried by chapters 1–29, and Part VIII is structure rather than
-   application.
+1. **Ch. 31** (Part VIII, optional and terminal) — the Koopman operator. Not on the
+   critical path: the book's thesis is fully carried by chapters 1–29, and Part VIII is
+   structure rather than application. Chapter 30 is written; chapter 31 would complete
+   the book as planned.
 
 ### A second decision on record: splitting chapter 20
 
