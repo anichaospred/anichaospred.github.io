@@ -36,6 +36,7 @@ from chaoslib import (
     learning,
     lyapunov,
     maps,
+    nonstationary,
     plotting,
     shallowwater,
     spatial,
@@ -5656,3 +5657,378 @@ def test_a_trained_emulator_inherits_the_leading_exponent():
     )
     assert spectrum[0] == pytest.approx(float(truth[0]), rel=0.20)
 
+
+
+# ==========================================================================
+# nonstationary: attribution identities and detection power
+# ==========================================================================
+def test_ramped_lorenz96_reduces_to_lorenz96_and_batches_exactly():
+    """Two identities chapter 28's experiment rests on.
+
+    With a zero ramp rate the ramped right-hand side is Lorenz 96 *bitwise* --
+    the forcing is a single additive term, so nothing is regrouped.
+
+    And a per-member ``forcing_start`` broadcasting over the ensemble axis
+    reproduces the scalar case exactly, which is what lets a thousand forecasts
+    launched at different absolute times integrate in one call: a member
+    launched at time ``s`` and stepped on a lead grid sees ``F_0 + r(s + tau)``.
+    """
+    n = 12
+    x0 = systems.lorenz96_uniform_state(8.0, n) + 0.01 * np.sin(np.arange(n))
+    grid = integrate.trajectory_grid(20.0, 0.01)
+
+    plain = integrate.rk4(systems.lorenz96, x0, grid, forcing=8.0)
+    ramped = integrate.rk4(
+        systems.lorenz96_ramped, x0, grid, forcing_start=8.0, forcing_rate=0.0
+    )
+    assert np.array_equal(plain, ramped)
+
+    launch, rate = 250.0, 0.001
+    scalar = integrate.rk4(
+        systems.lorenz96_ramped,
+        x0,
+        grid,
+        forcing_start=8.0 + rate * launch,
+        forcing_rate=rate,
+    )
+    batched = integrate.rk4(
+        systems.lorenz96_ramped,
+        np.stack([x0, x0]),
+        grid,
+        forcing_start=np.array([[8.0 + rate * launch], [8.0 + rate * 100.0]]),
+        forcing_rate=rate,
+    )
+    assert np.array_equal(batched[:, 0, :], scalar)
+    # The two members must diverge: same state, different climate.
+    assert np.abs(batched[-1, 0] - batched[-1, 1]).max() > 1.0
+
+
+def test_lorenz96_energy_identity_holds_at_every_forcing():
+    r"""Multiplying Lorenz 96 by :math:`x_k` and summing, the quadratic terms
+    telescope on a cyclic chain, so a stationary attractor satisfies
+    :math:`\langle x^2\rangle = F\langle x\rangle` **exactly** for every
+    :math:`F` and :math:`N`.
+
+    This is the check that the climates chapter 28 compares are the climates it
+    thinks they are: it fails immediately if a transient was not discarded or
+    if the trajectory was generated at a different forcing from the one passed.
+    """
+    n = 20
+    for forcing in (6.0, 8.0, 10.0):
+        x0 = systems.lorenz96_uniform_state(forcing, n) + 0.01 * np.sin(
+            np.arange(n)
+        )
+        traj = integrate.rk4(
+            systems.lorenz96,
+            x0,
+            integrate.trajectory_grid(1200.0, 0.01),
+            forcing=forcing,
+        )[40000:]
+        mean_square, forcing_mean = systems.lorenz96_energy_balance(traj, forcing)
+        assert mean_square == pytest.approx(forcing_mean, rel=2e-3)
+
+    # And the ramp cannot change the total contraction: tr J = -N for every
+    # state and every F, so the exponents must sum to -N at any forcing.
+    for forcing in (6.0, 10.0):
+        x0 = systems.lorenz96_uniform_state(forcing, 8) + 0.01 * np.sin(
+            np.arange(8)
+        )
+        spectrum = lyapunov.lyapunov_spectrum(
+            systems.lorenz96,
+            systems.lorenz96_jacobian,
+            x0,
+            dt=0.01,
+            t_final=200.0,
+            t_transient=20.0,
+            forcing=forcing,
+        )
+        assert spectrum.sum() == pytest.approx(-8.0, abs=1e-3)
+
+
+def test_spectral_centroid_is_amplitude_free():
+    """The classifier chapter 28 uses to compare two climates must not respond
+    to the amplitude of the flow, or a shift-share decomposition reports the
+    change in units as a change in circulation."""
+    rng = np.random.default_rng(0)
+    states = rng.normal(size=(50, 40))
+    base = spatial.spectral_centroid(states)
+    assert base.shape == (50,)
+    assert np.all((base > 0.0) & (base <= 20.0))
+    assert spatial.spectral_centroid(7.3 * states) == pytest.approx(base)
+    # Adding a constant changes only m = 0, which is excluded.
+    assert spatial.spectral_centroid(states + 5.0) == pytest.approx(base)
+    # A pure wave sits exactly on its own wavenumber.
+    k = np.arange(40)
+    for m in (1, 3, 9):
+        wave = np.cos(2.0 * np.pi * m * k / 40.0)[None, :]
+        assert float(spatial.spectral_centroid(wave)[0]) == pytest.approx(
+            float(m), abs=1e-9
+        )
+
+
+def test_horizon_law_decomposition_is_exact_and_signed_correctly():
+    r"""The three components sum to the total change with no residual, for
+    arbitrary values -- the identity
+    :math:`L_1/\lambda_1 - L_0/\lambda_0 =
+    \frac{L_1+L_0}{2}(\lambda_1^{-1}-\lambda_0^{-1})
+    + (L_1-L_0)\frac{\lambda_1^{-1}+\lambda_0^{-1}}{2}` holds term by term.
+
+    Also the three signs, each of which is a physical statement: a more
+    unstable flow shortens the horizon, a *larger-amplitude* climate lengthens
+    it at fixed absolute analysis error, and a better analysis lengthens it.
+    """
+    rng = np.random.default_rng(4)
+    for _ in range(200):
+        sat = tuple(np.exp(rng.normal(3.0, 0.5, size=2)))
+        d0 = tuple(np.exp(rng.normal(-2.0, 1.0, size=2)))
+        rate = tuple(np.exp(rng.normal(0.3, 0.4, size=2)))
+        parts = nonstationary.horizon_law_decomposition(sat, d0, rate)
+        total = parts["instability"] + parts["amplitude"] + parts["accuracy"]
+        assert total == pytest.approx(parts["total"], abs=1e-12)
+        assert parts["horizon_before"] == pytest.approx(
+            errorgrowth.horizon_law(sat[0], d0[0], rate[0]), rel=1e-12
+        )
+        assert parts["horizon_after"] == pytest.approx(
+            errorgrowth.horizon_law(sat[1], d0[1], rate[1]), rel=1e-12
+        )
+
+    rising = nonstationary.horizon_law_decomposition(
+        (10.0, 10.0), (0.1, 0.1), (1.0, 2.0)
+    )
+    assert rising["instability"] < 0.0 and rising["total"] < 0.0
+    bigger = nonstationary.horizon_law_decomposition(
+        (10.0, 20.0), (0.1, 0.1), (1.0, 1.0)
+    )
+    assert bigger["amplitude"] > 0.0
+    assert bigger["amplitude"] == pytest.approx(np.log(2.0), rel=1e-12)
+    better = nonstationary.horizon_law_decomposition(
+        (10.0, 10.0), (0.1, 0.01), (1.0, 1.0)
+    )
+    assert better["accuracy"] == pytest.approx(np.log(10.0), rel=1e-12)
+
+    with pytest.raises(ValueError):
+        nonstationary.horizon_law_decomposition((10.0, 10.0), (0.1, 0.1), (0.0, 1.0))
+
+
+def test_factorial_attribution_sums_and_predicts_the_interaction():
+    r"""The 2x2 decomposes exactly, and the interaction is the analytically
+    known consequence of the horizon being :math:`L/\lambda`: a fixed gain in
+    :math:`\ln\delta_0` buys :math:`\Delta\ln\delta_0/\lambda`, so it buys less
+    in a more unstable climate.
+    """
+    rng = np.random.default_rng(5)
+    for _ in range(100):
+        cells = rng.normal(size=4)
+        parts = nonstationary.factorial_attribution(*cells)
+        assert parts["system"] + parts["climate"] + parts["interaction"] == (
+            pytest.approx(parts["observed"], abs=1e-12)
+        )
+        assert parts["main_system"] + parts["main_climate"] == pytest.approx(
+            parts["observed"], abs=1e-12
+        )
+
+    sat, gain = 30.0, np.log(10.0)
+    lam_old, lam_new, d_old = 1.0, 2.0, 0.3
+    def _h(saturation, delta0, rate):
+        return errorgrowth.horizon_law(saturation, delta0, rate)
+    parts = nonstationary.factorial_attribution(
+        _h(sat, d_old, lam_old),
+        _h(sat, d_old, lam_new),
+        _h(sat, d_old / 10.0, lam_old),
+        _h(sat, d_old / 10.0, lam_new),
+    )
+    assert parts["interaction"] == pytest.approx(
+        gain * (1.0 / lam_new - 1.0 / lam_old), rel=1e-12
+    )
+    assert parts["interaction"] < 0.0
+
+
+def test_breakeven_accuracy_inverts_the_horizon_law():
+    """The returned analysis error is exactly the one that holds the horizon
+    fixed, and the exponent is the ratio of the leading exponents -- so a
+    doubling of instability squares the requirement rather than doubling it."""
+    sat = (25.0, 40.0)
+    rate = (1.0, 2.0)
+    d_old = 0.3
+    answer = nonstationary.breakeven_accuracy(sat, rate, d_old)
+    before = errorgrowth.horizon_law(sat[0], d_old, rate[0])
+    after = errorgrowth.horizon_law(sat[1], answer["delta0_after"], rate[1])
+    assert after == pytest.approx(before, rel=1e-12)
+    assert answer["ratio"] == pytest.approx(d_old / answer["delta0_after"])
+    assert answer["decades"] == pytest.approx(np.log10(answer["ratio"]))
+    # A climate that did not change needs no improvement at all.
+    flat = nonstationary.breakeven_accuracy((25.0, 25.0), (1.0, 1.0), d_old)
+    assert flat["ratio"] == pytest.approx(1.0, rel=1e-12)
+
+    # Anchoring on a measured horizon holds *that* horizon instead, and the
+    # requirement is exponential in it -- a 10 % longer starting horizon moves
+    # the answer by exp(0.1 * lambda_1 * T), which is why the chapter reports
+    # both the law's answer and the measured-anchored one.
+    anchored = nonstationary.breakeven_accuracy(
+        sat, rate, d_old, horizon_before=1.1 * before
+    )
+    assert anchored["horizon_held"] == pytest.approx(1.1 * before)
+    assert errorgrowth.horizon_law(
+        sat[1], anchored["delta0_after"], rate[1]
+    ) == pytest.approx(1.1 * before, rel=1e-12)
+    assert anchored["ratio"] / answer["ratio"] == pytest.approx(
+        np.exp(0.1 * before * rate[1]), rel=1e-12
+    )
+
+
+def test_shift_share_is_exact_and_separates_the_two_mechanisms():
+    """Exact on random data, and it gets the two limiting cases right: a pure
+    change in group means is all `within`, a pure change in occupancy is all
+    `between`."""
+    rng = np.random.default_rng(6)
+    for _ in range(100):
+        n_groups = int(rng.integers(2, 7))
+        gb = rng.integers(0, n_groups, size=int(rng.integers(40, 200)))
+        ga = rng.integers(0, n_groups, size=int(rng.integers(40, 200)))
+        parts = nonstationary.shift_share(
+            gb, rng.normal(size=gb.size), ga, rng.normal(size=ga.size), n_groups
+        )
+        assert parts["within"] + parts["between"] == pytest.approx(
+            parts["total"], abs=1e-12
+        )
+
+    # Same occupancy, every group shifted by the same amount: all within.
+    groups = np.repeat(np.arange(4), 50)
+    values = rng.normal(size=groups.size)
+    pure_within = nonstationary.shift_share(
+        groups, values, groups, values + 2.0, 4
+    )
+    assert pure_within["within"] == pytest.approx(2.0, rel=1e-12)
+    assert pure_within["between"] == pytest.approx(0.0, abs=1e-12)
+
+    # Same per-group values, different occupancy: all between.
+    means = np.array([0.0, 1.0, 2.0, 3.0])
+    gb = np.repeat(np.arange(4), [80, 40, 40, 40])
+    ga = np.repeat(np.arange(4), [40, 40, 40, 80])
+    pure_between = nonstationary.shift_share(gb, means[gb], ga, means[ga], 4)
+    assert pure_between["within"] == pytest.approx(0.0, abs=1e-12)
+    assert pure_between["between"] == pytest.approx(
+        pure_between["total"], abs=1e-12
+    )
+    assert pure_between["between"] > 0.0
+
+    # Swapping the epochs only changes the sign -- the symmetric form is used
+    # precisely so the split is not an artefact of which epoch came first.
+    forward = nonstationary.shift_share(gb, means[gb], ga, means[ga] + 1.0, 4)
+    backward = nonstationary.shift_share(ga, means[ga] + 1.0, gb, means[gb], 4)
+    assert forward["within"] == pytest.approx(-backward["within"], abs=1e-12)
+    assert forward["between"] == pytest.approx(-backward["between"], abs=1e-12)
+
+    with pytest.raises(ValueError):
+        nonstationary.shift_share([0, 5], [1.0, 2.0], [0, 1], [1.0, 2.0], 2)
+
+
+def test_effective_sample_size_matches_its_exact_limits():
+    r"""White noise gives :math:`n`; an AR(1) with lag-one correlation
+    :math:`\phi` gives :math:`n(1-\phi)/(1+\phi)`.
+
+    This is the correction that decides chapter 28's record lengths: an
+    operational centre runs a forecast a day, but consecutive forecasts verify
+    against nearly the same atmosphere and are not independent measurements of
+    its predictability.
+    """
+    rng = np.random.default_rng(7)
+    n = 200000
+    white = rng.normal(size=n)
+    assert nonstationary.effective_sample_size(white) == pytest.approx(n, rel=0.05)
+
+    for phi in (0.5, 0.8):
+        noise = rng.normal(size=n)
+        series = np.empty(n)
+        series[0] = noise[0]
+        for i in range(1, n):
+            series[i] = phi * series[i - 1] + noise[i]
+        expected = n * (1.0 - phi) / (1.0 + phi)
+        assert nonstationary.effective_sample_size(series) == pytest.approx(
+            expected, rel=0.12
+        )
+
+    with pytest.raises(ValueError):
+        nonstationary.effective_sample_size([1.0, 2.0, 3.0])
+
+
+def test_trend_power_matches_monte_carlo_and_scales_as_n_to_the_three_halves():
+    r"""The analytic power is the non-central t probability, and it agrees with
+    a Monte Carlo over the same design.
+
+    The scaling matters more than the values: :math:`S_{xx} = m\,n(n^2-1)/12`,
+    so the standard error falls like :math:`n^{-3/2}` in the length of the
+    record and only like :math:`m^{-1/2}` in the sample within each epoch.
+    Lengthening the record is worth far more than densifying it.
+    """
+    sigma, slope = 1.0, 0.045
+    n_epochs, m = 12, 20
+
+    se = nonstationary.trend_standard_error(sigma, n_epochs, m)
+    assert se == pytest.approx(sigma / np.sqrt(m * n_epochs * (n_epochs**2 - 1) / 12))
+    # Doubling the record beats doubling the sample by exactly 2.
+    gain_length = se / nonstationary.trend_standard_error(sigma, 2 * n_epochs, m)
+    gain_sample = se / nonstationary.trend_standard_error(sigma, n_epochs, 2 * m)
+    assert gain_length / gain_sample == pytest.approx(2.0, rel=0.02)
+
+    analytic = nonstationary.trend_detection_power(slope, sigma, n_epochs, m)
+    rng = np.random.default_rng(8)
+    x = np.repeat(np.arange(n_epochs, dtype=float), m)
+    trials = 3000
+    detected = 0
+    for _ in range(trials):
+        y = slope * x + rng.normal(scale=sigma, size=x.size)
+        if nonstationary.linear_trend(x, y)["pvalue"] < 0.05:
+            detected += 1
+    assert 0.2 < analytic < 0.95, "chosen to sit where power is informative"
+    assert detected / trials == pytest.approx(analytic, abs=0.03)
+
+    # A zero trend is detected at the nominal false-positive rate.
+    assert nonstationary.trend_detection_power(0.0, sigma, n_epochs, m) == (
+        pytest.approx(0.05, abs=1e-6)
+    )
+    # Long record, large non-centrality: SciPy's nct returns nan there, and the
+    # guarded normal fallback must give a finite power of essentially one. A
+    # nan here would also break minimum_record_length's upward scan.
+    easy = nonstationary.trend_detection_power(0.012, 0.58, 40, 45)
+    assert np.isfinite(easy) and easy > 0.999
+    # Power is monotone in the record length, which is what licenses the scan
+    # in minimum_record_length.
+    powers = [
+        nonstationary.trend_detection_power(slope, sigma, n, m)
+        for n in range(3, 25)
+    ]
+    assert np.all(np.diff(powers) > 0.0)
+    needed = nonstationary.minimum_record_length(slope, sigma, m)
+    assert nonstationary.trend_detection_power(slope, sigma, needed, m) >= 0.8
+    assert nonstationary.trend_detection_power(slope, sigma, needed - 1, m) < 0.8
+
+
+def test_linear_trend_recovers_a_known_slope_and_drops_censored_cases():
+    """OLS against a closed-form answer, and the documented handling of the
+    non-finite horizons a censored forecast record contains."""
+    x = np.arange(50, dtype=float)
+    y = 3.0 - 0.25 * x
+    fit = nonstationary.linear_trend(x, y)
+    assert fit["slope"] == pytest.approx(-0.25, rel=1e-12)
+    assert fit["intercept"] == pytest.approx(3.0, rel=1e-12)
+    assert fit["stderr"] == pytest.approx(0.0, abs=1e-12)
+    assert fit["n"] == 50.0
+
+    y_censored = y.copy()
+    y_censored[[3, 17, 40]] = np.inf
+    censored = nonstationary.linear_trend(x, y_censored)
+    assert censored["n"] == 47.0
+    assert censored["slope"] == pytest.approx(-0.25, rel=1e-12)
+
+    with pytest.raises(ValueError):
+        nonstationary.linear_trend(np.ones(10), np.arange(10.0))
+
+
+def test_epoch_means_splits_the_leading_axis():
+    values = np.arange(24.0).reshape(12, 2)
+    means = nonstationary.epoch_means(values, 3)
+    assert means.shape == (3, 2)
+    assert means[0] == pytest.approx(values[:4].mean(axis=0))
+    with pytest.raises(ValueError):
+        nonstationary.epoch_means(np.arange(10.0), 3)

@@ -28,6 +28,7 @@ Array = np.ndarray
 __all__ = [
     "spatial_power_spectrum",
     "dominant_wavenumber",
+    "spectral_centroid",
     "phase_speed",
     "spatial_correlation",
     "correlation_length",
@@ -75,6 +76,43 @@ def dominant_wavenumber(field: Array) -> int:
     """
     m, power = spatial_power_spectrum(field)
     return int(m[1:][np.argmax(power[1:])])
+
+
+def spectral_centroid(field: Array) -> Array:
+    r"""Energy-weighted mean wavenumber of **each** state, one number per state.
+
+    .. math::
+        \bar m(x) = \frac{\sum_{m\ge1} m\,|\hat x_m|^2}
+                         {\sum_{m\ge1} |\hat x_m|^2}
+
+    with the :math:`m=0` component excluded, so the centroid describes the
+    *shape* of the state and not its mean level. It is therefore
+    **dimensionless and amplitude-free**: multiplying a state by any constant
+    leaves it unchanged.
+
+    That invariance is the point, and it is what makes the quantity usable
+    across two climates with different variance. Chapter 28 needs to ask
+    whether a change in mean instability came from states of a given kind
+    becoming more unstable or from the system visiting a different mix of
+    states, and a classifier that grows with the amplitude of the flow would
+    answer that question with its own units
+    (see :func:`chaoslib.nonstationary.shift_share`).
+
+    ``field`` has shape ``(..., n)``; the last axis is the site axis. Returns
+    shape ``field.shape[:-1]``.
+    """
+    x = np.asarray(field, dtype=float)
+    n = x.shape[-1]
+    power = np.abs(np.fft.rfft(x, axis=-1)) ** 2
+    m = np.arange(power.shape[-1], dtype=float)
+    # Drop m = 0; a state with no structure at all has an undefined centroid.
+    power = power[..., 1:]
+    m = m[1:]
+    total = power.sum(axis=-1)
+    with np.errstate(invalid="ignore", divide="ignore"):
+        centroid = np.where(total > 0.0, (power * m).sum(axis=-1) / total, np.nan)
+    del n
+    return centroid
 
 
 def phase_speed(field: Array, wavenumber: int, dt: float) -> float:

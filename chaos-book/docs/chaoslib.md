@@ -19,7 +19,9 @@ on the leading axis**; information-theoretic quantities are in **nats**; symbols
 | `lorenz63_jacobian(x, …)` | `trace = -(sigma+1+beta)` for every state |
 | `lorenz63_fixed_points(rho, beta)` | returns `(origin, C_plus, C_minus)`; the pair is `None` for $\rho \le 1$ |
 | `lorenz63_hopf_rho(sigma, beta)` | $\approx 24.7368$ for the classical parameters |
-| `lorenz96(t, x, forcing)`, `lorenz96_jacobian(x, …)` | cyclic; last axis is the site axis |
+| `lorenz96(t, x, forcing)`, `lorenz96_jacobian(x, …)` | cyclic; last axis is the site axis; `trace = -N` for every state and every `forcing` |
+| `lorenz96_ramped(t, x, forcing_start, forcing_rate)`, `lorenz96_ramp(t, …)` | bitwise `lorenz96` at zero rate; `forcing_start` broadcasts over the ensemble axis (see below) |
+| `lorenz96_energy_balance(trajectory, forcing)` | the two sides of $\langle x^2\rangle = F\langle x\rangle$, exact on any stationary attractor |
 | `pendulum`, `pendulum_energy`, `pendulum_period_exact` | exact period via `ellipk`; note SciPy takes $m=k^2$ |
 | `double_pendulum`, `double_pendulum_energy` | full Euler–Lagrange equations |
 | `logistic_map(x, r)`, `henon_map(xy, a, b)` | discrete maps |
@@ -35,6 +37,18 @@ Read chapter 12 before drawing conclusions from it. It shows the upscale-cascade
 mechanism, but its leading Lyapunov exponent (24.7 per time unit) belongs to the fast
 subsystem and overstates large-scale error growth by 8.3×, and it does **not** exhibit
 Lorenz's finite predictability limit — that needs a spectrum of scales, not two.
+
+`lorenz96_ramped`'s broadcasting is what makes a non-stationary *forecast* experiment
+affordable. A member launched at absolute time $s$ and stepped on a **lead-time** grid
+$\tau$ sees $F_0 + r(s+\tau)$, so passing `forcing_start` $= F_0 + rs$ per member
+reproduces the absolute ramp exactly — a thousand launches at a thousand different times
+in one `rk4` call rather than a Python loop, and a test asserts the identity against the
+scalar case.
+
+Do **not** get the same effect by shifting the time grid instead
+(`trajectory_grid(...) + s`). Once $s$ is large the grid's steps are no longer exactly
+uniform — `250.01 - 250.0` is not `0.01` in binary floating point — so that is a
+different integration, and in a chaotic system the difference grows at $\lambda_1$.
 ## `integrate` — time stepping
 
 | Function | Use it for |
@@ -423,8 +437,14 @@ four and not more. Measure the floor at a lag where the true answer is zero.
 
 ## `spatial` — diagnostics for a field on a ring
 
-`spatial_power_spectrum`, `dominant_wavenumber`, `phase_speed`, `spatial_correlation`,
-`correlation_length`.
+`spatial_power_spectrum`, `dominant_wavenumber`, `spectral_centroid`, `phase_speed`,
+`spatial_correlation`, `correlation_length`.
+
+`spectral_centroid` differs from the others in returning one number **per state** rather
+than a time average: the energy-weighted mean wavenumber, with $m=0$ excluded, so it is
+dimensionless and unchanged by scaling the state. That invariance is the point — it is
+usable as a state classifier across two climates of different amplitude, where an
+amplitude-sensitive index would report a change in units as a change in circulation.
 
 Lorenz 63 has no space, so an error in it has no wavelength. Lorenz 96 does, and these
 are the questions that become available: what scale is the error on, how fast does the
@@ -494,3 +514,50 @@ new colour cannot be added as a shade of an existing one.
 
 Each colour means one thing across every chapter. Import them; do not choose colours
 per figure.
+
+## `nonstationary` — trends in predictability, and their detectability
+
+`horizon_law_decomposition`, `factorial_attribution`, `breakeven_accuracy`,
+`shift_share`, `linear_trend`, `epoch_means`, `effective_sample_size`,
+`trend_standard_error`, `trend_detection_power`, `minimum_record_length`.
+
+Chapter 28's machinery. A forecast skill record is the product of a forecasting system
+and an atmosphere that both changed, and these are the four tools for prising them apart.
+
+**The conceptual point comes before any of them.** A Lyapunov exponent is a limit as
+$T\to\infty$ — a property of an *attractor*, which a system under changing forcing does
+not have. "The predictability of the 1980s" is therefore not well posed in the sense of
+`lyapunov`, and everything here is a finite-sample estimate of a finite-time quantity.
+That is why `trend_detection_power` exists and why its answers are large.
+
+**Three exact decompositions.** `horizon_law_decomposition` splits a change in the
+forecast horizon into instability, amplitude and accuracy terms; `factorial_attribution`
+splits an observed skill change into system, climate and their interaction;
+`shift_share` splits a change in a mean into within-group and reweighting parts. All
+three are algebraic identities with no residual and no linearisation, and all three are
+tested on that identity rather than on a reference value. The first and third use a
+**symmetric** form deliberately: the common "hold one fixed and vary the other" split is
+exact too but order-dependent, so swapping the epochs changes the answer.
+
+**Signs, once.** Every horizon is a *time*, so a positive trend means longer forecasts.
+A rising $\lambda_1$ appears as a negative horizon trend. And
+`horizon_law_decomposition`'s `amplitude` term is **positive** when the climate's
+variability grows, because a fixed absolute analysis error is a smaller *relative* error
+against a larger signal.
+
+**Two traps.**
+
+`shift_share`'s grouping carries the entire scientific content of the decomposition. A
+classifier defined on unnormalised amplitudes will report a reweighting that is nothing
+but the change in units, and a classifier that does not predict the quantity being
+decomposed will report 100 % "within" whatever the truth is — chapter 28 measures that
+failure rather than assuming its way past it.
+
+`trend_detection_power` takes `n_per_epoch`, and the number to pass is the *effective*
+sample size from `effective_sample_size`, not the number of forecasts. Consecutive daily
+forecasts verify against nearly the same atmosphere; treating them as independent
+inflates the significance of any trend, and in chapter 28 it understates the required
+record length by about a factor of two. The power itself comes from the **non-central**
+$t$ distribution rather than the usual normal approximation, which overstates power for
+exactly the short records at issue — with a guarded fallback to the normal limit, since
+SciPy's `nct` returns `nan` for a large `df` with a large non-centrality.
