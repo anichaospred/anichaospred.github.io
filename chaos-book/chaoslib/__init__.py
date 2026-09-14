@@ -31,6 +31,8 @@ assimilate   3D-Var, 4D-Var, Kalman filter and EnKF on the low-order models
 ensemble     ensemble construction and probabilistic verification scores
 verification anomaly correlation, skill scores and forecast horizons
 earlywarning critical slowing down, escape times and early-warning indicators
+ergodic      invariant measures, time against ensemble averages, and how long a
+             run has to be before its climatology means anything
 learning     a reservoir computer with an analytic tangent map
 nonstationary trends in predictability: attribution, and how long a record
              has to be before one is detectable
@@ -51,6 +53,7 @@ from chaoslib import (
     dimension,
     earlywarning,
     ensemble,
+    ergodic,
     errorgrowth,
     information,
     integrate,
@@ -77,6 +80,7 @@ __all__ = [
     "dimension",
     "earlywarning",
     "ensemble",
+    "ergodic",
     "errorgrowth",
     "information",
     "integrate",

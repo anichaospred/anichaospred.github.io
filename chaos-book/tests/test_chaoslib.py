@@ -30,6 +30,7 @@ from chaoslib import (
     dimension,
     earlywarning,
     ensemble,
+    ergodic,
     errorgrowth,
     information,
     integrate,
@@ -6032,3 +6033,334 @@ def test_epoch_means_splits_the_leading_axis():
     assert means[0] == pytest.approx(values[:4].mean(axis=0))
     with pytest.raises(ValueError):
         nonstationary.epoch_means(np.arange(10.0), 3)
+
+
+# =========================================================================
+# ergodic: invariant measures and the convergence of time averages
+# =========================================================================
+def test_time_average_is_the_trapezoidal_rule_and_spans_n_minus_one_steps():
+    """A linear ramp integrates exactly, and the window is (n-1)*dt, not n*dt.
+
+    The off-by-one is the whole point: mean() of a linear ramp sampled on
+    [0, T] is also (a + bT/2), so a test on the value alone cannot tell the two
+    conventions apart. A quadratic can -- the trapezoidal rule has a known
+    O(dt^2) error on it and the rectangle rule an O(dt) one.
+    """
+    dt = 0.01
+    t = np.arange(0.0, 2.0 + 0.5 * dt, dt)
+    assert ergodic.time_average(3.0 - 0.5 * t, dt) == pytest.approx(
+        3.0 - 0.5 * 1.0, rel=1e-12
+    )
+    # exact mean of t^2 over [0,2] is 4/3; trapezoid errs at O(dt^2)
+    measured = ergodic.time_average(t**2, dt)
+    assert measured == pytest.approx(4.0 / 3.0, abs=1e-4)
+    assert abs(measured - 4.0 / 3.0) < abs(np.mean(t**2) - 4.0 / 3.0)
+
+    with pytest.raises(ValueError):
+        ergodic.time_average(np.array([1.0]), dt)
+
+
+def test_running_time_average_matches_the_windowed_average_at_every_point():
+    """The cumulative form and the one-shot form are the same estimator."""
+    dt = 0.05
+    t = np.arange(0.0, 10.0 + 0.5 * dt, dt)
+    signal = np.sin(t) + 0.3 * t
+    running = ergodic.running_time_average(signal, dt)
+    assert running.shape == signal.shape
+    assert running[0] == pytest.approx(signal[0], rel=1e-12)
+    for k in (5, 37, 100, signal.size - 1):
+        assert running[k] == pytest.approx(
+            ergodic.time_average(signal[: k + 1], dt), rel=1e-12
+        )
+
+
+def test_trailing_average_bias_is_exactly_half_a_window_of_drift():
+    """For a drifting mean the bias is -bT/2 exactly, to machine precision,
+    and it does not shrink as the window lengthens -- the estimator is
+    inconsistent, not merely slow."""
+    dt, rate = 0.01, 0.003
+    t = np.arange(0.0, 400.0 + 0.5 * dt, dt)
+    signal = 23.5 + rate * t  # a mean that drifts, with no variability at all
+    for window_tu in (50.0, 200.0):
+        w = int(window_tu / dt)
+        trail = ergodic.trailing_average(signal, w)
+        assert np.all(np.isnan(trail[: w - 1]))
+        bias = float(np.nanmean(trail - signal))
+        # a w-sample boxcar spans (w-1)*dt of continuous time, the same
+        # (n-1) convention as time_average; using w*dt here is wrong by one
+        # sample and the machine-precision tolerance is what reveals it
+        span = (w - 1) * dt
+        assert bias == pytest.approx(
+            ergodic.trailing_average_bias(rate, span), rel=1e-9
+        )
+    assert ergodic.trailing_average_bias(0.003, 400.0) == pytest.approx(-0.6)
+    with pytest.raises(ValueError):
+        ergodic.trailing_average(signal, signal.size + 1)
+
+
+def test_autocorrelation_time_is_the_reciprocal_of_the_effective_sample_size():
+    """The two modules must not drift apart: tau_int = n*dt/n_eff, exactly,
+    and both must reproduce the AR(1) limit (1+phi)/(1-phi)."""
+    rng = np.random.default_rng(11)
+    phi, n, dt = 0.8, 200_000, 0.25
+    noise = rng.normal(size=n)
+    series = np.empty(n)
+    series[0] = noise[0]
+    for i in range(1, n):
+        series[i] = phi * series[i - 1] + noise[i]
+
+    tau = ergodic.autocorrelation_time(series, dt)
+    n_eff = nonstationary.effective_sample_size(series)
+    assert tau == pytest.approx(n * dt / n_eff, rel=1e-12)
+    assert tau / dt == pytest.approx((1.0 + phi) / (1.0 - phi), rel=0.1)
+
+    white = rng.normal(size=20_000)
+    assert ergodic.autocorrelation_time(white, dt) == pytest.approx(dt, rel=0.15)
+    with pytest.raises(ValueError):
+        ergodic.autocorrelation_time(np.ones(3), dt)
+
+
+def test_batch_variance_recovers_the_ar1_correlation_time_and_the_T_inverse_law():
+    """For a process with an integrable autocovariance, tau_eff must plateau at
+    tau_int and the variance of the mean must fall like 1/T."""
+    rng = np.random.default_rng(5)
+    phi, n, dt = 0.9, 400_000, 1.0
+    noise = rng.normal(size=n)
+    series = np.empty(n)
+    series[0] = noise[0]
+    for i in range(1, n):
+        series[i] = phi * series[i - 1] + noise[i]
+
+    out = ergodic.batch_variance(series, [50.0, 100.0, 200.0, 400.0, 800.0], dt)
+    assert out["window"] == pytest.approx([50.0, 100.0, 200.0, 400.0, 800.0])
+    assert out["blocks"][0] == 8000.0
+    expected_tau = (1.0 + phi) / (1.0 - phi)  # = 19
+    assert np.all(np.abs(out["tau_eff"][1:] / expected_tau - 1.0) < 0.25)
+
+    law = ergodic.power_law_fit(out["window"], out["variance"])
+    assert law["exponent"] == pytest.approx(-1.0, abs=0.12)
+    assert law["r2"] > 0.99
+
+
+def test_power_law_fit_recovers_an_exact_power_and_drops_bad_pairs():
+    x = np.array([1.0, 2.0, 4.0, 8.0, 16.0])
+    fit = ergodic.power_law_fit(x, 3.0 * x**-0.5)
+    assert fit["exponent"] == pytest.approx(-0.5, rel=1e-10)
+    assert fit["prefactor"] == pytest.approx(3.0, rel=1e-10)
+    assert fit["r2"] == pytest.approx(1.0, rel=1e-12)
+    # a single zero must not poison the whole fit
+    y = 3.0 * x**-0.5
+    y[2] = 0.0
+    assert ergodic.power_law_fit(x, y)["exponent"] == pytest.approx(-0.5, abs=0.05)
+    assert np.isnan(ergodic.power_law_fit([1.0], [1.0])["exponent"])
+
+
+def test_budget_variance_rises_with_members_and_matches_the_parameter_free_penalty():
+    """One long run is optimal at fixed cost, and the inflation is exactly the
+    spin-up fraction -- no correlation time enters the ratio."""
+    var, tau, budget, spin = 62.8, 1.0, 2000.0, 20.0
+    single = ergodic.budget_variance(var, tau, budget, 1, spin)
+    assert single == pytest.approx(tau * var / (budget - spin), rel=1e-12)
+
+    previous = single
+    for m in (2, 5, 10, 25, 50):
+        v = ergodic.budget_variance(var, tau, budget, m, spin)
+        assert v > previous
+        assert v / single == pytest.approx(
+            ergodic.budget_penalty(budget, m, spin), rel=1e-12
+        )
+        previous = v
+    assert ergodic.budget_penalty(2000.0, 50, 20.0) == pytest.approx(
+        1980.0 / 1000.0, rel=1e-12
+    )
+    # no spin-up, no penalty: splitting is then free
+    assert ergodic.budget_penalty(2000.0, 50, 0.0) == pytest.approx(1.0)
+    assert np.isinf(ergodic.budget_variance(var, tau, 100.0, 50, spin))
+
+
+def test_wasserstein1_matches_scipy_and_the_analytic_shift():
+    """W1 between a distribution and its own translate is the shift itself."""
+    from scipy import stats
+
+    rng = np.random.default_rng(7)
+    a = rng.normal(size=4000)
+    b = rng.normal(size=3000) + 1.5
+    mine = ergodic.wasserstein1(a, b)
+    assert mine == pytest.approx(stats.wasserstein_distance(a, b), rel=1e-10)
+    assert mine == pytest.approx(1.5, rel=0.05)
+
+    grid = np.linspace(0.0, 1.0, 20001)
+    assert ergodic.wasserstein1(grid, grid + 0.25) == pytest.approx(0.25, rel=1e-3)
+    assert ergodic.wasserstein1(a, a) == 0.0
+    with pytest.raises(ValueError):
+        ergodic.wasserstein1(np.array([]), a)
+
+
+def test_empirical_measure_and_total_variation_on_a_known_split():
+    edges = np.array([0.0, 1.0, 2.0, 3.0])
+    left = ergodic.empirical_measure([0.5, 0.5, 1.5, 2.5], edges)
+    assert left["probability"] == pytest.approx([0.5, 0.25, 0.25])
+    assert left["density"] == pytest.approx([0.5, 0.25, 0.25])  # unit-width bins
+    assert left["centre"] == pytest.approx([0.5, 1.5, 2.5])
+    # samples outside the range are dropped and the rest renormalised
+    with_outliers = ergodic.empirical_measure([0.5, 0.5, 1.5, 2.5, 99.0], edges)
+    assert with_outliers["probability"].sum() == pytest.approx(1.0)
+
+    assert ergodic.total_variation([0.5, 0.5], [0.5, 0.5]) == 0.0
+    assert ergodic.total_variation([1.0, 0.0], [0.0, 1.0]) == pytest.approx(1.0)
+    with pytest.raises(ValueError):
+        ergodic.total_variation([0.5, 0.5], [1.0])
+
+
+def test_logistic_map_orbit_samples_the_exact_arcsine_measure():
+    """The one system in the book whose invariant measure is known in closed
+    form, so convergence can be measured against truth rather than against a
+    longer run: <x> = 1/2 and var = 1/8 exactly."""
+    n = 400_000
+    x = np.empty(n)
+    v = 0.3141592653589793
+    for i in range(n):
+        v = 4.0 * v * (1.0 - v)
+        x[i] = v
+    assert x.mean() == pytest.approx(0.5, abs=5e-3)
+    assert x.var() == pytest.approx(0.125, abs=5e-3)
+
+    # the density, the CDF and the quantile function are mutually consistent
+    grid = np.linspace(1e-6, 1.0 - 1e-6, 200_001)
+    cdf = ergodic.logistic_invariant_cdf(grid)
+    assert float(np.trapezoid(ergodic.logistic_invariant_density(grid), grid)) == (
+        pytest.approx(1.0, abs=2e-3)
+    )
+    assert ergodic.logistic_invariant_quantile(cdf) == pytest.approx(grid, abs=1e-9)
+    assert ergodic.logistic_invariant_cdf(0.5) == pytest.approx(0.5, rel=1e-12)
+    # exact moments of the arcsine law, by quadrature against the density
+    density = ergodic.logistic_invariant_density(grid)
+    assert float(np.trapezoid(grid * density, grid)) == pytest.approx(0.5, abs=2e-3)
+    assert float(np.trapezoid(grid**2 * density, grid)) == pytest.approx(
+        0.375, abs=2e-3
+    )
+
+    # and the orbit's empirical measure matches an exact draw from the law
+    exact = ergodic.logistic_invariant_quantile(
+        (np.arange(n, dtype=float) + 0.5) / n
+    )
+    assert ergodic.wasserstein1(x, exact) < 0.01
+
+
+def test_boltzmann_density_is_the_stationary_measure_of_the_noisy_double_well():
+    """An exact invariant measure for a stochastic flow: it pins the drift and
+    the integrator's noise convention together, so a lost factor of two in
+    either shows up as a wrong width."""
+    grid = np.linspace(-2.5, 2.5, 4001)
+    potential = systems.double_well_potential(grid)
+    sigma = 0.55
+    density = ergodic.boltzmann_density(grid, potential, sigma)
+    assert float(np.trapezoid(density, grid)) == pytest.approx(1.0, rel=1e-9)
+    assert density == pytest.approx(density[::-1], rel=1e-9)  # symmetric well
+
+    t = integrate.trajectory_grid(t_final=4000.0, dt=0.01)
+    path = integrate.rk4_stochastic(
+        systems.double_well, np.linspace(-1.2, 1.2, 40), t, noise_std=sigma, seed=2
+    )
+    exact = ergodic.logistic_invariant_quantile  # not used; keeps the name honest
+    del exact
+    sampled = path[int(200.0 / 0.01) :].ravel()
+    edges = np.linspace(-2.0, 2.0, 41)
+    measured = ergodic.empirical_measure(sampled, edges)
+    reference = ergodic.empirical_measure(
+        np.interp(
+            np.linspace(0.0, 1.0, 200_001),
+            np.concatenate(([0.0], np.cumsum(0.5 * (density[1:] + density[:-1])
+                                             * np.diff(grid)))),
+            grid,
+        ),
+        edges,
+    )
+    assert ergodic.total_variation(
+        measured["probability"], reference["probability"]
+    ) < 0.06
+    with pytest.raises(ValueError):
+        ergodic.boltzmann_density(grid, potential, 0.0)
+
+
+def test_rotation_is_ergodic_and_converges_faster_than_a_random_sample():
+    """Ergodicity is not chaos. The rotation has lambda_1 = 0 and is not
+    mixing, yet its averages converge like log(N)/N against the N^-1/2 of an
+    i.i.d. sample -- an advantage of three orders of magnitude by N = 1000."""
+    golden = (np.sqrt(5.0) - 1.0) / 2.0
+    rng = np.random.default_rng(3)
+    for n in (1000, 10_000):
+        orbit = ergodic.rotation_orbit(golden, n)
+        assert orbit.min() >= 0.0 and orbit.max() < 1.0
+        assert abs(orbit.mean() - 0.5) < 1e-3
+        assert ergodic.star_discrepancy(orbit) < 20.0 * np.log(n) / n
+        assert ergodic.star_discrepancy(orbit) < ergodic.star_discrepancy(
+            rng.random(n)
+        )
+
+    # a rational rotation is periodic, so it is NOT ergodic: five points, for
+    # ever, and a discrepancy that does not fall with n
+    rational = ergodic.rotation_orbit(0.2, 5000)
+    assert np.unique(np.round(rational, 12)).size == 5
+    assert ergodic.star_discrepancy(rational) > 0.09
+
+
+def test_star_discrepancy_matches_a_brute_force_supremum():
+    points = np.array([0.1, 0.35, 0.62, 0.63, 0.9])
+    grid = np.linspace(0.0, 1.0, 200_001)
+    empirical = np.searchsorted(np.sort(points), grid, side="left") / points.size
+    brute = float(np.max(np.abs(empirical - grid)))
+    assert ergodic.star_discrepancy(points) == pytest.approx(brute, abs=1e-5)
+    assert ergodic.star_discrepancy([0.5]) == pytest.approx(0.5, rel=1e-12)
+    with pytest.raises(ValueError):
+        ergodic.star_discrepancy([])
+
+
+def test_lorenz63_moment_identities_close_on_their_boundary_terms():
+    """Four identities that hold for EVERY finite window, exactly, because a
+    time average of a total derivative is a boundary term. They test the
+    integrator; their boundary-free forms test convergence."""
+    dt = 0.005
+    t = integrate.trajectory_grid(t_final=20.0, dt=dt)
+    traj = integrate.rk4(systems.lorenz63, np.array([1.0, 1.0, 20.0]), t)
+    res = ergodic.lorenz63_moment_residuals(traj, dt)
+    assert res["duration"] == pytest.approx(20.0, rel=1e-12)
+    # terms are of order 60, 1500; the identities close to 1e-5 relative
+    assert abs(res["finite_x2"]) < 1e-3
+    assert abs(res["finite_z"]) < 1e-3
+    assert abs(res["finite_z2"]) < 5e-2
+    assert abs(res["finite_y2"]) < 5e-2
+    # over a short window the boundary terms are NOT negligible: dropping them
+    # is a much worse approximation, which is what makes the limit forms a
+    # convergence diagnostic rather than an identity
+    assert abs(res["limit_z"]) > 10.0 * abs(res["finite_z"])
+
+    with pytest.raises(ValueError):
+        ergodic.lorenz63_moment_residuals(traj[:, :2], dt)
+
+
+def test_lorenz63_limit_identities_tighten_as_the_run_lengthens():
+    """<x^2> = beta<z> on the invariant measure. The residual is a convergence
+    diagnostic computable from a single run with no reference."""
+    dt = 0.01
+    t = integrate.trajectory_grid(t_final=2000.0, dt=dt)
+    traj = integrate.rk4(systems.lorenz63, np.array([1.0, 1.0, 20.0]), t)
+    short = ergodic.lorenz63_moment_residuals(traj[: int(20.0 / dt) + 1], dt)
+    long = ergodic.lorenz63_moment_residuals(traj, dt)
+    assert abs(long["limit_z"]) < abs(short["limit_z"])
+    assert long["mean_x2"] / (8.0 / 3.0) == pytest.approx(long["mean_z"], rel=1e-3)
+    # <z> for L63 at rho=28 is about 23.55
+    assert long["mean_z"] == pytest.approx(23.55, abs=0.15)
+    # <x> = 0 exactly by the (x,y,z) -> (-x,-y,z) symmetry, and it is the
+    # slowest quantity here to get there
+    assert abs(long["mean_x"]) < 1.0
+
+
+def test_occupancy_is_a_half_on_a_symmetric_double_well():
+    t = integrate.trajectory_grid(t_final=6000.0, dt=0.01)
+    path = integrate.rk4_stochastic(
+        systems.double_well, np.linspace(-1.1, 1.1, 60), t, noise_std=0.45, seed=4
+    )
+    assert ergodic.occupancy(path[int(100.0 / 0.01) :]) == pytest.approx(0.5, abs=0.06)
+    assert ergodic.occupancy([1.0, 2.0, -1.0, -2.0]) == pytest.approx(0.5)
+    assert np.isnan(ergodic.occupancy([np.nan]))

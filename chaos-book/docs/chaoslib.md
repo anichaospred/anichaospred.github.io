@@ -561,3 +561,52 @@ record length by about a factor of two. The power itself comes from the **non-ce
 $t$ distribution rather than the usual normal approximation, which overstates power for
 exactly the short records at issue — with a guarded fallback to the normal limit, since
 SciPy's `nct` returns `nan` for a large `df` with a large non-centrality.
+
+## `ergodic` — invariant measures, and how long a run has to be
+
+Chapter 30. The module for the object every climatology is an estimate of.
+
+| function | role |
+|---|---|
+| `time_average(values, dt)` | trapezoidal $\bar A_T$; the window spans $(n-1)\Delta t$ |
+| `running_time_average(values, dt)`, `trailing_average(values, window)` | cumulative and boxcar forms |
+| `trailing_average_bias(rate, window)` | $-bT/2$, exact, for a drifting mean |
+| `block_means`, `batch_variance(values, windows, dt)` | variance of the mean against window length, and the $\tau_{\rm eff}(T)$ it implies |
+| `autocorrelation_time(series, dt)` | $\tau_{\rm int}$, initial-positive-sequence rule |
+| `sampling_error`, `budget_variance`, `budget_penalty` | the Monte Carlo law, and the cost of splitting a budget |
+| `power_law_fit(x, y)` | log–log OLS, for convergence exponents |
+| `empirical_measure`, `wasserstein1`, `total_variation` | measures, and two distances between them |
+| `logistic_invariant_density / _cdf / _quantile` | the arcsine law: an invariant measure in closed form |
+| `boltzmann_density(x, potential, noise_std)` | $Z^{-1}e^{-2V/\sigma^2}$, exact for a noisy gradient flow |
+| `rotation_orbit(alpha, n)`, `star_discrepancy(points)` | ergodic without being chaotic, and its sampling error |
+| `lorenz63_moment_residuals(traj, dt, …)` | four exact identities of the invariant measure |
+| `occupancy(series, threshold)` | the measure of one regime |
+
+**Two closed-form invariant measures make the rest testable.** The logistic map at
+$r = 4$ has the arcsine density with exact moments $\langle x\rangle = 1/2$ and
+$\operatorname{var} = 1/8$, and a noisy gradient flow has the Boltzmann density exactly.
+Everything else — convergence rates, error bars, the ergodic time — is measured against
+those two rather than against a longer run of itself.
+
+**`autocorrelation_time` and `nonstationary.effective_sample_size` are exact
+reciprocals**, $\tau_{\rm int} = n\Delta t/n_{\rm eff}$, and a test asserts it to machine
+precision so the two conventions cannot silently diverge.
+
+**Prefer `batch_variance` to `autocorrelation_time` when the answer matters.** They agree
+for a monotonically decaying autocorrelation and disagree badly otherwise, in both
+directions. On Lorenz 63 the positive-sequence rule overstates the error of
+$\langle z\rangle$ fivefold, because truncating at the first zero crossing discards the
+negative lobes of an oscillating autocorrelation that do the cancelling. On a noisy
+bistable record it *understates* the error fifteenfold, because it measures the
+within-well wobble (2.1 time units) rather than the well-switching time (279).
+
+**`lorenz63_moment_residuals` returns two families and they answer different questions.**
+`finite_*` keep the boundary term and hold at every window, exactly, so they test the
+*integrator*; `limit_*` drop it and hold only in the limit, so they test *convergence*
+and are a diagnostic a control run can apply to itself with no reference run. The
+underlying fact is that $\overline{\dot B}_T = (B_T - B_0)/T$ for any bounded $B$, which
+needs neither ergodicity nor mixing.
+
+**The trap.** `trailing_average_bias` takes a *continuous* span; a boxcar of $w$ samples
+spans $(w-1)\Delta t$, not $w\Delta t$. The difference is one sample and it matters only
+because the law is otherwise exact — a machine-precision test is what surfaced it.
