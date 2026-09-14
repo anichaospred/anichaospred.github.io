@@ -22,6 +22,8 @@ lyapunov     Lyapunov spectra, finite-time exponents, doubling times, dimension
 errorgrowth  saturation and the logistic error-growth model
 dimension    fractal dimension estimated from a sampled trajectory
 information  entropy, relative entropy and mutual information as predictability
+koopman      the linear operator on observables; EDMD, dictionaries and what
+             a finite dictionary costs
 maps         bifurcation cascades, Feigenbaum universality, map Lyapunov exponents
 spatial      spectra, phase speeds and correlation lengths for fields on a ring
 turbulence   two-dimensional pseudospectral flow and its energy spectrum
@@ -57,6 +59,7 @@ from chaoslib import (
     errorgrowth,
     information,
     integrate,
+    koopman,
     learning,
     lyapunov,
     maps,
@@ -84,6 +87,7 @@ __all__ = [
     "errorgrowth",
     "information",
     "integrate",
+    "koopman",
     "learning",
     "lyapunov",
     "maps",

@@ -27,6 +27,10 @@ Units are SI unless a standard domain alternative is noted.
 | $D_{KY}$ | Kaplan–Yorke dimension | from the spectrum |
 | $D_2$ | correlation dimension | from a sampled trajectory |
 | $T_d$ | error-doubling time | $\ln 2/\lambda_1$ |
+| $\mathcal{K}^\tau$ | Koopman operator | $(\mathcal{K}^\tau g)(x) = g(\mathcal{M}^\tau(x))$; linear on observables |
+| $g$ | an observable, or a dictionary of them | a function of the state, not a state |
+| $\mathbf{K}$ | the finite-dictionary compression of $\mathcal{K}^\tau$ | what EDMD fits |
+| $\phi$ | a Koopman eigenfunction | $\mathcal{K}^\tau\phi = e^{\lambda\tau}\phi$ |
 | $\nu$ | invariant (natural) measure | "climate" as a distribution on state space |
 | $\langle A\rangle_\nu$ | ensemble average | $\int A\,d\nu$; the object a climatology estimates |
 | $\bar A_T$ | time average over a window $T$ | the estimator a control run provides |
@@ -52,7 +56,11 @@ interpretive conventions, not derivations — state them as such.
 | $\theta, \omega$ | pendulum angle and angular velocity |
 | $L, g, m$ | pendulum length, gravity, mass |
 
-Note two collisions. $\mu$ is the double-well tilt of chapters 27 and 30 and is the
+Note the collisions, all of them deliberate rather than tidied away, because each
+symbol is standard in its own literature. $\mathbf{K}$ is the Kalman gain of chapters 18
+to 20 **and** the finite-dictionary Koopman operator of chapter 31; the two never appear
+in the same chapter, and chapter 31 says so where it introduces it. $g$ is gravity for
+the pendulum and an observable for the Koopman operator. $\mu$ is the double-well tilt of chapters 27 and 30 and is the
 conventional symbol for an invariant measure; this book writes the measure $\nu$
 throughout and reserves $\mu$ for the tilt. And $\sigma$ is the Lorenz 63 Prandtl number,
 the noise amplitude of a stochastic run, **and** the conventional symbol for a singular

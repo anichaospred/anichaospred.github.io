@@ -24,6 +24,8 @@ on the leading axis**; information-theoretic quantities are in **nats**; symbols
 | `lorenz96_energy_balance(trajectory, forcing)` | the two sides of $\langle x^2\rangle = F\langle x\rangle$, exact on any stationary attractor |
 | `pendulum`, `pendulum_energy`, `pendulum_period_exact` | exact period via `ellipk`; note SciPy takes $m=k^2$ |
 | `double_pendulum`, `double_pendulum_energy` | full Euler–Lagrange equations |
+| `slow_manifold(t, x, mu, lam)`, `slow_manifold_solution(t, x0, …)` | closed-form solution; a fast variable slaved to a slow one |
+| `slow_manifold_koopman_matrix(mu, lam)` | the exact $3\times3$ Koopman generator on $\{x_1, x_2, x_1^2\}$; eigenvalues $\mu,\lambda,2\mu$ |
 | `logistic_map(x, r)`, `henon_map(xy, a, b)` | discrete maps |
 
 
@@ -610,3 +612,54 @@ needs neither ergodicity nor mixing.
 **The trap.** `trailing_average_bias` takes a *continuous* span; a boxcar of $w$ samples
 spans $(w-1)\Delta t$, not $w\Delta t$. The difference is one sample and it matters only
 because the law is otherwise exact — a machine-precision test is what surfaced it.
+
+## `koopman` — the linear operator on observables
+
+Chapter 31. The exact linear representation of a nonlinear system, and the cost of
+truncating it.
+
+| function | role |
+|---|---|
+| `standardise(states, reference)` | whiten before building any dictionary |
+| `pick_centres(states, count, seed)` | radial-basis centres drawn from the trajectory |
+| `rbf_features(states, centres, width)` | constant, state, Gaussian bumps |
+| `monomial_features(states, order)`, `monomial_powers` | all monomials to a total degree |
+| `edmd(features_x, features_y)` | the regression, with its residual, rank and spectrum |
+| `dmd(states_x, states_y)` | the same thing on the state alone |
+| `closure_residual(K, gx, gy)` | is the dictionary invariant? evaluated out of sample |
+| `linear_rollout(K, g0, steps)` | iterate in observable space — the linear model |
+| `relift_rollout(K, x0, steps, lift, slice)` | re-lift each step — not a linear model |
+| `off_manifold_residual(g, lift, slice)` | how far a vector is from being any state's dictionary |
+| `continuous_eigenvalues(eigs, tau)`, `spectral_radius(K)` | reading the spectrum |
+| `operator_correlation(K, features, column, steps)` | the autocorrelation the operator predicts |
+
+**Column layout is load-bearing.** Both dictionaries put the constant at column 0 and the
+state at columns `1 .. n`, which is what lets `linear_rollout` and `relift_rollout` read
+the state straight back out with no reconstruction step. The constant is not padding:
+$g \equiv 1$ satisfies $\mathcal{K}g = g$ for *every* dynamical system, so including it
+puts an exact eigenvalue of 1 in the fit, and `spectral_radius` returning exactly 1 is
+the signature. That eigenvalue is chapter 30's invariant measure.
+
+**Read the residual, not the eigenvalues.** A small `closure_residual` means the
+dictionary is nearly invariant and the eigenvalues approximate Koopman eigenvalues; a
+large one means the eigenvalues describe a projection rather than the dynamics. On
+`systems.slow_manifold` the dictionary $\{x_1, x_2, x_1^2\}$ gives $5\times10^{-16}$ and
+the same data without $x_1^2$ gives $10^{-3}$.
+
+**A bigger dictionary is not a safer one.** Adding $x_1x_2$ to a dictionary that closes
+*breaks* closure, because $\frac{d}{dt}(x_1x_2) = (\mu+\lambda)x_1x_2 - \lambda x_1^3$
+leaks into a term the span does not contain. Closure is an algebraic property of the
+span, not a resolution to be increased, and the tests assert exactly this.
+
+**The two rollouts are two different models, and only one of them is linear.**
+`linear_rollout` is the Koopman model as advertised — one matrix, applied repeatedly,
+unconditionally stable, and on Lorenz 63 it is 44 % off the lifted manifold within one
+time unit. `relift_rollout` rebuilds the dictionary from the reconstructed state each
+step, which is five times more skilful and is a nonlinear map. Every implementation that
+forecasts competitively does the second; every claim about "linearising the dynamics"
+describes the first. `off_manifold_residual` is what distinguishes "the operator is
+inaccurate" from "the iteration has left the set it was fitted on".
+
+**The trap.** `continuous_eigenvalues` takes a branch of the logarithm, so any frequency
+above the Nyquist rate $\pi/\tau$ is aliased into a slower one. A mode reported near
+Nyquist is unresolved, not measured.

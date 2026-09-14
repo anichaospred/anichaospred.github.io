@@ -34,6 +34,7 @@ from chaoslib import (
     errorgrowth,
     information,
     integrate,
+    koopman,
     learning,
     lyapunov,
     maps,
@@ -6364,3 +6365,238 @@ def test_occupancy_is_a_half_on_a_symmetric_double_well():
     assert ergodic.occupancy(path[int(100.0 / 0.01) :]) == pytest.approx(0.5, abs=0.06)
     assert ergodic.occupancy([1.0, 2.0, -1.0, -2.0]) == pytest.approx(0.5)
     assert np.isnan(ergodic.occupancy([np.nan]))
+
+
+# =========================================================================
+# koopman: the linear operator on observables
+# =========================================================================
+def test_slow_manifold_closed_form_matches_the_integrator():
+    """An exact solution, so the integrator and the Koopman matrix can be
+    checked against it independently rather than against each other."""
+    mu, lam, dt = -0.05, -1.0, 0.01
+    t = integrate.trajectory_grid(t_final=40.0, dt=dt)
+    x0 = np.array([1.2, 0.7])
+    numeric = integrate.rk4(systems.slow_manifold, x0, t, mu=mu, lam=lam)
+    exact = systems.slow_manifold_solution(t, x0, mu, lam)
+    assert np.abs(numeric - exact).max() < 1e-8
+
+    # and it vectorises over an ensemble axis
+    pair = np.array([[1.2, 0.7], [-0.8, 2.0]])
+    assert np.abs(
+        integrate.rk4(systems.slow_manifold, pair, t, mu=mu, lam=lam)
+        - systems.slow_manifold_solution(t, pair, mu, lam)
+    ).max() < 1e-8
+
+    with pytest.raises(ValueError):  # the resonant case has a secular term
+        systems.slow_manifold_solution(t, x0, -0.5, -1.0)
+
+
+def test_slow_manifold_koopman_matrix_has_the_exact_spectrum():
+    """Eigenvalues mu, lam and 2mu exactly -- and 2mu has no counterpart in the
+    Jacobian, because products of Koopman eigenfunctions are eigenfunctions and
+    their eigenvalues add."""
+    mu, lam = -0.05, -1.0
+    a = systems.slow_manifold_koopman_matrix(mu, lam)
+    assert a.shape == (3, 3)
+    assert np.sort(np.linalg.eigvals(a).real) == pytest.approx(
+        sorted([mu, lam, 2 * mu]), rel=1e-12
+    )
+    assert np.abs(np.linalg.eigvals(a).imag).max() == pytest.approx(0.0, abs=1e-12)
+
+    # the matrix really does generate the dynamics of (x1, x2, x1^2)
+    from scipy.linalg import expm
+
+    dt = 0.01
+    t = integrate.trajectory_grid(t_final=30.0, dt=dt)
+    x0 = np.array([1.2, 0.7])
+    traj = systems.slow_manifold_solution(t, x0, mu, lam)
+    lifted = np.stack([traj[:, 0], traj[:, 1], traj[:, 0] ** 2], axis=-1)
+    predicted = np.stack([expm(a * s) @ np.array([1.2, 0.7, 1.44]) for s in t])
+    assert np.abs(predicted - lifted).max() < 1e-9
+
+
+def test_edmd_recovers_the_exact_operator_when_the_dictionary_closes():
+    """The whole chapter in one assertion: with x1^2 in the dictionary the fit
+    is exact to machine precision; without it, it is not."""
+    mu, lam, dt = -0.05, -1.0, 0.01
+    t = integrate.trajectory_grid(t_final=40.0, dt=dt)
+    traj = integrate.rk4(systems.slow_manifold, np.array([1.2, 0.7]), t,
+                         mu=mu, lam=lam)
+
+    closing = np.stack([traj[:, 0], traj[:, 1], traj[:, 0] ** 2], axis=-1)
+    fit = koopman.edmd(closing[:-1], closing[1:])
+    assert fit["residual"] < 1e-12
+    rates = np.sort(koopman.continuous_eigenvalues(fit["eigenvalues"], dt).real)
+    assert rates == pytest.approx(sorted([mu, lam, 2 * mu]), abs=1e-6)
+
+    truncated = koopman.edmd(traj[:-1], traj[1:])
+    assert truncated["residual"] > 1e-5
+    assert truncated["residual"] > 1000.0 * fit["residual"]
+
+    # closure_residual evaluates a fitted operator on held-out data
+    assert koopman.closure_residual(
+        fit["operator"], closing[:-1], closing[1:]
+    ) == pytest.approx(fit["residual"], rel=1e-9)
+    with pytest.raises(ValueError):
+        koopman.edmd(closing[:-1], closing[1:, :2])
+
+
+def test_dmd_is_exact_for_a_linear_system():
+    """DMD is EDMD at order one, so it must be exact exactly when the dynamics
+    is linear -- and its eigenvalues must be those of the propagator."""
+    from scipy.linalg import expm
+
+    generator = np.array([[-0.3, 2.0], [-2.0, -0.3]])  # a decaying rotation
+    dt, n = 0.05, 2000
+    propagator = expm(generator * dt)
+    x = np.empty((n, 2))
+    x[0] = [1.0, 0.5]
+    for i in range(1, n):
+        x[i] = propagator @ x[i - 1]
+    fit = koopman.dmd(x[:-1], x[1:])
+    assert fit["residual"] < 1e-10
+    rates = koopman.continuous_eigenvalues(fit["eigenvalues"], dt)
+    finite = rates[np.isfinite(rates.real)]
+    # the constant contributes eigenvalue 1 -> rate 0; the pair gives -0.3 +- 2i
+    assert np.isclose(finite.real, 0.0, atol=1e-8).sum() >= 1
+    assert np.isclose(finite.real, -0.3, atol=1e-6).sum() == 2
+    assert np.isclose(np.abs(finite.imag), 2.0, atol=1e-6).sum() == 2
+
+
+def test_the_constant_is_always_an_eigenfunction_with_eigenvalue_one():
+    """True for every dynamical system, so it is a test of the dictionary
+    rather than of the system -- and it is what pins the spectral radius."""
+    t = integrate.trajectory_grid(t_final=400.0, dt=0.01)
+    traj = integrate.rk4(systems.lorenz63, np.array([1.0, 1.0, 20.0]), t)[5000:]
+    sub = koopman.standardise(traj[::5])
+    centres = koopman.pick_centres(sub, 40, seed=1)
+    gx = koopman.rbf_features(sub[:-1], centres)
+    gy = koopman.rbf_features(sub[1:], centres)
+    fit = koopman.edmd(gx, gy)
+    magnitudes = np.sort(np.abs(fit["eigenvalues"]))[::-1]
+    assert magnitudes[0] == pytest.approx(1.0, abs=1e-8)
+    assert koopman.spectral_radius(fit["operator"]) == pytest.approx(1.0, abs=1e-8)
+    # a chaotic system's leading eigenvalue is the ONLY one on the circle
+    assert magnitudes[1] < 1.0
+
+
+def test_dictionaries_have_the_documented_column_layout():
+    """Column 0 is the constant and columns 1..n are the state, in both
+    dictionaries: linear_rollout and relift_rollout both index on that."""
+    states = np.array([[0.5, -1.0, 2.0], [1.5, 0.0, -0.5]])
+    centres = np.array([[0.0, 0.0, 0.0]])
+    rbf = koopman.rbf_features(states, centres, width=1.0)
+    assert rbf.shape == (2, 5)
+    assert rbf[:, 0] == pytest.approx(1.0)
+    assert rbf[:, 1:4] == pytest.approx(states)
+    assert rbf[:, 4] == pytest.approx(
+        np.exp(-(states**2).sum(axis=1) / 2.0)
+    )
+    assert koopman.rbf_features(states, np.zeros((0, 3))).shape == (2, 4)
+
+    powers = koopman.monomial_powers(2, 2)
+    assert powers.shape == (6, 2)
+    assert powers[0].tolist() == [0, 0]
+    mono = koopman.monomial_features(np.array([[2.0, 3.0]]), order=2)
+    assert mono.shape == (1, 6)
+    assert sorted(mono[0].tolist()) == sorted([1.0, 2.0, 3.0, 4.0, 6.0, 9.0])
+
+    with pytest.raises(ValueError):
+        koopman.pick_centres(states, 99)
+
+
+def test_standardise_whitens_against_a_reference_sample():
+    rng = np.random.default_rng(2)
+    sample = rng.normal(loc=[5.0, -2.0], scale=[3.0, 0.5], size=(4000, 2))
+    whitened = koopman.standardise(sample)
+    assert whitened.mean(axis=0) == pytest.approx([0.0, 0.0], abs=1e-12)
+    assert whitened.std(axis=0) == pytest.approx([1.0, 1.0], rel=1e-12)
+    other = koopman.standardise(sample[:10], reference=sample)
+    assert other == pytest.approx(whitened[:10], rel=1e-12)
+    # a constant column must not divide by zero
+    flat = np.column_stack([sample[:, 0], np.full(4000, 7.0)])
+    assert np.isfinite(koopman.standardise(flat)).all()
+
+
+def test_linear_rollout_is_exact_where_the_dictionary_closes():
+    """On the slow manifold the linear rollout IS the dynamics, for all time --
+    which is the control the chaotic case is measured against."""
+    mu, lam, dt = -0.05, -1.0, 0.01
+    t = integrate.trajectory_grid(t_final=40.0, dt=dt)
+    traj = integrate.rk4(systems.slow_manifold, np.array([1.2, 0.7]), t,
+                         mu=mu, lam=lam)
+    lift = lambda s: np.stack([s[..., 0], s[..., 1], s[..., 0] ** 2], axis=-1)
+    fit = koopman.edmd(lift(traj[:-1]), lift(traj[1:]))
+
+    steps = 3000
+    rolled = koopman.linear_rollout(fit["operator"], lift(traj[:1]), steps)
+    assert rolled.shape == (steps + 1, 1, 3)
+    assert np.abs(rolled[:, 0, :2] - traj[: steps + 1]).max() < 1e-6
+
+    # and the rolled-out vector never leaves the lifted manifold
+    off = koopman.off_manifold_residual(rolled[-1], lift, slice(0, 2))
+    assert float(off.max()) < 1e-6
+
+
+def test_off_manifold_residual_is_zero_on_the_manifold_and_positive_off_it():
+    lift = lambda s: np.stack([s[..., 0], s[..., 1], s[..., 0] ** 2], axis=-1)
+    states = np.array([[1.0, 2.0], [-0.5, 0.25]])
+    on = lift(states)
+    assert koopman.off_manifold_residual(on, lift, slice(0, 2)) == pytest.approx(
+        [0.0, 0.0], abs=1e-14
+    )
+    off = on.copy()
+    off[:, 2] += 1.0  # a third component no state can produce
+    assert (koopman.off_manifold_residual(off, lift, slice(0, 2)) > 0.1).all()
+
+
+def test_relift_rollout_reproduces_the_linear_one_where_the_dictionary_closes():
+    """The two rollouts differ only by the off-manifold drift, so where there
+    is none they must agree to machine precision."""
+    mu, lam, dt = -0.05, -1.0, 0.01
+    t = integrate.trajectory_grid(t_final=20.0, dt=dt)
+    traj = integrate.rk4(systems.slow_manifold, np.array([1.2, 0.7]), t,
+                         mu=mu, lam=lam)
+    lift = lambda s: np.stack([s[..., 0], s[..., 1], s[..., 0] ** 2], axis=-1)
+    fit = koopman.edmd(lift(traj[:-1]), lift(traj[1:]))
+    steps = 1200
+    linear = koopman.linear_rollout(fit["operator"], lift(traj[:1]), steps)
+    relift = koopman.relift_rollout(
+        fit["operator"], traj[:1], steps, lift, slice(0, 2)
+    )
+    assert relift.shape == (steps + 1, 1, 2)
+    assert np.abs(relift - linear[:, :, :2]).max() < 1e-8
+
+
+def test_operator_correlation_reproduces_a_known_decay():
+    """For an AR(1)-like linear system the correlation function is exactly
+    phi^n, and the operator must say so."""
+    phi, dt, n = 0.9, 1.0, 40000
+    rng = np.random.default_rng(4)
+    series = np.empty(n)
+    series[0] = 0.0
+    for i in range(1, n):
+        series[i] = phi * series[i - 1] + rng.normal(scale=0.4)
+    states = series[:, None]
+    fit = koopman.dmd(states[:-1], states[1:])
+    correlation = koopman.operator_correlation(
+        fit["operator"], np.hstack([np.ones((n - 1, 1)), states[:-1]]), 1, 12
+    )
+    lags = np.arange(13)
+    assert correlation[0] == pytest.approx(1.0, rel=1e-9)
+    assert correlation == pytest.approx(phi**lags, abs=0.05)
+    # an observable that is identically zero has no correlation to report
+    with pytest.raises(ValueError):
+        koopman.operator_correlation(
+            fit["operator"], np.zeros((50, 2)), 0, 3
+        )
+
+
+def test_continuous_eigenvalues_invert_the_exponential():
+    rates = np.array([-0.3 + 2.0j, -0.3 - 2.0j, 0.0 + 0.0j])
+    tau = 0.05
+    back = koopman.continuous_eigenvalues(np.exp(rates * tau), tau)
+    assert back == pytest.approx(rates, abs=1e-12)
+    # a zero eigenvalue is -inf, not an exception: that direction is
+    # annihilated in one step, which is the correct statement
+    assert np.isneginf(koopman.continuous_eigenvalues(np.array([0.0]), tau).real[0])
