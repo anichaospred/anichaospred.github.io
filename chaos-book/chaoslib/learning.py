@@ -46,8 +46,9 @@ find:
   being written and neither of them looked wrong.
 * **The spectral radius must be below one.** That is the echo state property,
   and it is a stability condition rather than a tuning preference: at radius
-  1.4 the free-running rollout diverges after 949 steps with a variance 273
-  times the truth's (chapter 29, section 2).
+  1.4 the free-running rollout diverges after 2,110 steps -- 21.1 time units --
+  with :math:`\max|u|` reaching :math:`9.8\times10^{3}` against a
+  climatological spread of order 4 (chapter 29, section 4).
 
 The emulator's own Lyapunov spectrum is computed by
 :func:`esn_lyapunov_spectrum` from the analytic tangent in
