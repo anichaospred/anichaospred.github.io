@@ -109,7 +109,9 @@ Copy `notebooks/_template.py` to `notebooks/chNN_slug.py`. Standard section orde
 7. **"What you should have seen"** — state the expected result plainly, so a reader
    who saw something else knows to look again.
 8. **Further reading** — the matching Palmer & Hagedorn / Kalnay sections. If you do
-   not have the section number to hand, write *[citation needed]*. **Never invent a
+   not have the section number to hand, write *[citation needed]* — and add a qualifier
+   (`: pages`, `: chapter`, `: confirm`) so that [`citations.md`](citations.md) can tell a
+   lookup from a search. **Never invent a
    citation or a page number.**
 
 ### House style
