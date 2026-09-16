@@ -690,9 +690,13 @@ What that leaves is maintenance and consolidation rather than new chapters:
    split, in both cases after checking which successor chapters had actually taken the
    material rather than assuming the plan's prediction had come true — and in chapter 6's
    case the check changed the edit.
-2. **`docs/chaoslib.md` has no sections for `earlywarning`, `learning` or
-   `shallowwater`** — three modules added by chapters 27, 29 and 2 without documentation.
-   Every other module is documented.
+2. **`docs/chaoslib.md` documents all twenty modules.** The three added by chapters 2,
+   27 and 29 without documentation — `shallowwater`, `earlywarning` and `learning` — were
+   backfilled, and a test-style check confirms every name in `chaoslib.__all__` has a
+   section. Writing them turned up a stale measurement in `learning`'s own module
+   docstring: it claimed the unstable rollout diverged after 949 steps where the
+   chapter's generated data says 2,110, so the docstring was corrected to the generated
+   value.
 3. **Citations.** Every chapter carries *[citation needed]* markers where a literature
    value or a reference belongs. Filling them is the largest remaining task and the one
    that cannot be done from inside the repository.

@@ -51,6 +51,7 @@ Do **not** get the same effect by shifting the time grid instead
 (`trajectory_grid(...) + s`). Once $s$ is large the grid's steps are no longer exactly
 uniform — `250.01 - 250.0` is not `0.01` in binary floating point — so that is a
 different integration, and in a chaotic system the difference grows at $\lambda_1$.
+
 ## `integrate` — time stepping
 
 | Function | Use it for |
@@ -486,6 +487,55 @@ a tautology. And it will **not** produce an inertial range at any resolution thi
 run: chapter 14 measures 0.00/0.04/0.05 octaves within 0.4 of $-3$ at
 $64^2$/$128^2$/$256^2$.
 
+## `shallowwater` — rotating shallow water on a ring
+
+Chapter 2. The smallest system that contains Richardson's problem: a slow balanced mode
+and a fast inertia-gravity mode, and the whole history of NWP turns on telling them
+apart.
+
+$$\partial_t u + u\,\partial_x u - fv = -g\,\partial_x h, \qquad
+  \partial_t v + u\,\partial_x v + fu = 0, \qquad
+  \partial_t h + \partial_x(hu) = 0$$
+
+| function | role |
+|---|---|
+| `shallow_water_grid(n, length)` | wavenumbers and spacing; build once, outside the time loop |
+| `shallow_water_1d(t, state, grid, …)` | the right-hand side, spectral in $x$ |
+| `shallow_water_state(u, v, h)`, `shallow_water_split(state)` | pack and unpack |
+| `geostrophic_balance(h, grid, …)` | the balanced state carrying a height field |
+| `gravity_wave_speed`, `inertia_gravity_frequency`, `rossby_radius` | the fast mode and its scales |
+| `shallow_water_mass`, `shallow_water_energy` | invariants, for diagnosing the timestep |
+| `surface_pressure_change(dh, depth, …)` | free surface to hPa — a convention, not a conversion |
+| `cfl_timestep(grid, …)` | the stable step, from a **measured** Courant number |
+
+**$h$ is the total depth**, not the deviation, so $\int h\,\mathrm{d}x$ is the mass.
+Derivatives are spectral on a periodic domain, which makes the dispersion relation
+$\omega^2 = f^2 + gHk^2$ exact to round-off rather than to the order of a stencil — the
+tests check it that way.
+
+**Geostrophic balance is an exact steady solution here, and the algebra is one line.**
+With $u \equiv 0$ and $fv = g\,\partial_x h$ every tendency vanishes *identically*: the
+$u$ equation is killed by the balance, the $v$ equation reads $-u\partial_x v - fu = 0$,
+and the $h$ equation reads $-\partial_x(hu) = 0$. Nothing was linearised and no amplitude
+was assumed small, so the tendency is zero to $10^{-15}$ relative for **any** height
+field, which the tests assert. That exactness is a property of one dimension on an
+$f$-plane and not of balance in general — in two dimensions, or with $f$ varying and
+advection able to feed back, balance is only asymptotic and a real initialisation scheme
+has a residual. Do not carry the exactness across.
+
+**`cfl_timestep`'s default Courant number is measured, not theoretical.** For this
+spectral RK4 discretisation the threshold is $C\Delta x/c$ with $C$ between 0.84 and 0.91
+across a factor of four in $c$ — an 8 % spread, mean 0.89 — and the default sits just
+below the mean so it is usable rather than marginal. The wind enters weakly, which is the
+substantive point: **the timestep is set by the wave, not by the weather**, so a model
+carrying the external gravity mode pays for a signal carrying no forecast information.
+Pass `depth=0` for the filtered-model limit, set by the wind alone.
+
+**`surface_pressure_change` is a scaling convention.** Shallow water has one layer and
+the atmosphere does not. It exists so chapter 2's numbers can be set beside the figure
+Richardson reported; any conclusion that depends on the constant rather than on the ratio
+is a statement about this model, not about the atmosphere.
+
 ## `plotting` — the book's figure design system
 
 Semantic colours (`C_TRUTH`, `C_PERT`, `C_SPREAD`, `C_MEAN`, `C_FIXED`, `C_SAT`,
@@ -516,6 +566,71 @@ new colour cannot be added as a shade of an existing one.
 
 Each colour means one thing across every chapter. Import them; do not choose colours
 per figure.
+
+## `earlywarning` — critical slowing down, and its honest limits
+
+Chapter 27. A system in a shallowing potential well relaxes more slowly, and a slower
+relaxation shows up in a record as more variance and more autocorrelation. That is the
+basis of every early-warning indicator in the literature; this module provides the
+indicators, the exact values they should take, and the two competing timing laws that
+decide whether a warning can arrive at all.
+
+| function | role |
+|---|---|
+| `detrend(series, axis)` | remove a least-squares line **first** — see below |
+| `lag1_autocorrelation`, `sliding_lag1_autocorrelation` | the autocorrelation indicator |
+| `sliding_variance(series, width, step)` | the variance indicator; returns `(centres, values)` in **samples** |
+| `kendall_tau(y, x)` | the literature's trend statistic, $\tau_b$, agreeing with SciPy |
+| `ar1_restoring_rate(alpha, dt)` | $\lambda = \ln\alpha/\Delta t$, negative for a stable state |
+| `ou_stationary_std(rate, noise_std)` | the exact $\sigma/\sqrt{2\lvert\lambda\rvert}$ an indicator estimates |
+| `kramers_escape_time(barrier, noise_std, …)` | mean first passage, $\propto e^{2\Delta V/\sigma^2}$ |
+| `escape_times(series, threshold, times)` | first crossing per member; `nan` where none |
+| `fold_delay(rate)` | how far **past** a fold a swept system is carried |
+| `noise_advanced_fold(noise_std, rate, quantile)` | how far **before** it noise takes it |
+
+**Signs and units, once.** The restoring rate $\lambda$ is the eigenvalue of the
+linearised drift and is **negative** for a stable state. `noise_std` is the diffusion
+coefficient in $\mathrm{d}x = f\,\mathrm{d}t + \sigma\,\mathrm{d}W$, in state units per
+**square root** of time — the same convention as `integrate.rk4_stochastic`. The exact
+Ornstein–Uhlenbeck relations everything leans on are
+$\operatorname{var}x = \sigma^2/2|\lambda|$ and
+$\operatorname{corr}(x_t, x_{t+\Delta t}) = e^{\lambda\Delta t}$; both diverge as
+$\lambda \to 0$, which is the signal.
+
+**Detrend first, and the reason is not cosmetic.** A record drifting towards a new state
+has a trend, and the variance of a trending series is dominated by the trend rather than
+by the fluctuations the indicator is meant to measure. That inflates the variance
+estimate *exactly when the system is closest to tipping* — it produces the hoped-for
+answer by construction.
+
+**An autocorrelation is not a rate.** `lag1_autocorrelation` estimates
+$e^{\lambda\Delta t}$, so the same system sampled twice as often reports a higher value.
+Comparing autocorrelations across records of different sampling is meaningless; convert
+with `ar1_restoring_rate` first.
+
+**Two failure modes the functions are built to expose.**
+
+`escape_times` returns `nan` for members that never crossed, and **the `nan` is the
+point**: averaging over only the members that escaped is a censored estimator biased
+*low*, because the slow escapes are precisely the ones missing. In chapter 27 a run in
+which 84 % of members escaped biased the fitted Kramers slope by 12 %; dropping that one
+case brought the fit to 0.2 % of the exact value. Check `np.isnan(...).any()` before
+taking a mean.
+
+`kramers_escape_time` is asymptotically exact in its exponential and **not** in its
+prefactor. Measured against an ensemble at $2\Delta V/\sigma^2$ between 2 and 6 it
+overestimates $\tau$ by about 60 %, while the *slope* of $\ln\tau$ against $1/\sigma^2$
+matches $2\Delta V$ to 0.2 %. Use it for a scaling, never for a date.
+
+**The two timing laws have opposite signs, so a measured tipping point is a
+competition.** `fold_delay` is the deterministic overshoot of a fold swept at rate
+$\gamma$, $\mu_{\rm tip} - \mu_c \simeq |a_1|3^{-1/6}\gamma^{2/3}$ from the Airy equation,
+constant $1.9469\ldots$, with a swept run measuring 1.9239 at
+$\gamma = 2.5\times10^{-4}$ and approaching from below. `noise_advanced_fold` is the
+noise-induced *advance*, and **its logarithm is the whole point**: dropping it leaves the
+usually quoted $d^* \propto \sigma^{4/3}$, where the full expression predicts the measured
+median tipping tilt to 3 % and the bare power law is wrong by a factor rising from 1.8 to
+3.2. Neither law can be checked without controlling the other.
 
 ## `nonstationary` — trends in predictability, and their detectability
 
@@ -563,6 +678,69 @@ record length by about a factor of two. The power itself comes from the **non-ce
 $t$ distribution rather than the usual normal approximation, which overstates power for
 exactly the short records at issue — with a guarded fallback to the normal limit, since
 SciPy's `nct` returns `nan` for a large `df` with a large non-centrality.
+
+## `learning` — a learned emulator, trainable in closed form
+
+Chapter 29. To ask whether a model *fitted* to a chaotic system inherits its dynamics —
+its Lyapunov spectrum, its unstable dimension, its error-growth law — needs an emulator
+that trains inside a browser (so, no gradient descent) and whose tangent map is available
+analytically (so, not a black box). A **reservoir computer** is both.
+
+A fixed random recurrent network is driven by the data,
+$\mathbf{r}_{k+1} = \tanh(\mathbf{W}\mathbf{r}_k + \mathbf{W}_{\rm in}\nu(\mathbf{u}_k))$,
+and only a linear readout is fitted, by ridge regression. Training is **one linear
+solve** — no optimiser, no learning rate, no stopping criterion, and the same answer
+every time.
+
+| function | role |
+|---|---|
+| `standardiser(data)`, `standardise(data, scaling)` | whiten the input; not optional, see below |
+| `echo_state_network(…)` | the fixed random reservoir, rescaled to an **exact** spectral radius |
+| `reservoir_drive(network, inputs, scaling)` | feed the **data** in — synchronisation |
+| `readout_features(states, inputs, scaling)` | $[\mathbf{r}, \mathbf{r}^2, \nu(\mathbf{u}), 1]$ |
+| `fit_readout(features, targets, ridge)` | the one linear solve |
+| `esn_step(…)`, `esn_rollout(…)` | feed the emulator's **own predictions** back — forecasting |
+| `esn_tangent_apply(…)` | the analytic Jacobian, checked against finite differences |
+| `esn_lyapunov_spectrum(…)` | Benettin on that tangent, in units of inverse time |
+
+**The squared term in the readout is load-bearing.** It breaks the odd symmetry of
+$\tanh$, without which the readout cannot represent a system whose statistics are not
+symmetric.
+
+**Three things that each cost a measurement to find.**
+
+*Inputs are standardised.* Feeding Lorenz 96 (mean 2.4, spread 3.7) straight into $\tanh$
+saturates the reservoir and costs two orders of magnitude in one-step accuracy.
+`standardiser` exists to make that hard to forget.
+
+*The readout predicts the increment*, not the state. The state is mostly persistence, so
+fitting it flatters the model and spends the readout's capacity reproducing the identity.
+
+*Driving and rolling out are different operations, and confusing them is silent.*
+`reservoir_drive` feeds the data in, which is how a reservoir is synchronised to a known
+state; `esn_rollout` feeds the emulator's own predictions back, which is a forecast. Using
+a rollout to "warm up" before scoring synchronises the reservoir to a trajectory that has
+already left the data — and the result still looks like Lorenz 96, it merely starts
+somewhere else, so the measured skill is meaningless. That produced two wrong answers
+while chapter 29 was being written and neither of them looked wrong.
+
+**The spectral radius is a stability condition, not a tuning preference.** Below one is
+the echo state property. At 1.4 the free-running rollout diverges after 2,110 steps
+(21.1 time units), with $\max|u|$ reaching $9.8\times10^3$ against a climatological
+spread of order 4. The useful part is that this is diagnosable **with no reference data
+at all** — $\rho(\mathbf{W})$ is a property of the untrained network.
+
+**`esn_rollout` returns a short trajectory when it blows up, and the length is the
+diagnostic.** Check it rather than assuming `n_steps` rows came back.
+`esn_lyapunov_spectrum` likewise returns `nan` if the rollout diverges before the
+transient is over, rather than a spectrum computed from a blown-up trajectory.
+
+**The check this library relies on everywhere is unavailable here.** For Lorenz 96 the
+exponents must sum to exactly $-N$, and that identity validates every other spectrum in
+this book. The emulator has no such identity — its state space is a thousand dimensions
+of reservoir with no phase-space volume to conserve — so the strongest available
+validation of a Lyapunov calculation is missing for the learned model. That is a
+limitation of the method, not of this implementation, and chapter 29 ends on it.
 
 ## `ergodic` — invariant measures, and how long a run has to be
 
