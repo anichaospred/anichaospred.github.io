@@ -949,7 +949,7 @@ def closing(mo):
     propagation, transient of 30 MTU discarded.*
     *λ₁(ρ) curve precomputed by `scripts/generate_rho_sweep.py`.*
     *Time unit: 1 MTU read as ≈ 5 days — a loose convention, not a calibration; see
-    chapter 6, Section 4.*
+    chapter 6's comparison table.*
     """
     )
     return

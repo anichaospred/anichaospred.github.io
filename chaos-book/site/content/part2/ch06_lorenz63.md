@@ -20,23 +20,34 @@ smallest system built from atmospheric physics that has one. Everything in Parts
 — Lyapunov exponents, error growth, ensembles, adjoints, data assimilation — is developed
 on this system before being trusted on anything larger.
 
-The notebook works through four things in order:
+The notebook works through three things in order:
 
-1. **The attractor.** Vary $\sigma$, $\rho$ and $\beta$ and the initial state, and watch
-   the long-term behaviour change qualitatively: decay to the origin, a spiral onto one
-   of the convective rolls $C^\pm$, the strange attractor, and the periodic window near
-   $\rho \approx 100$. A live readout classifies the regime and fits the leading
-   finite-time Lyapunov exponent.
+1. **The attractor, and the bifurcation that makes it.** Vary $\sigma$, $\rho$ and
+   $\beta$ and the initial state, and watch the long-term behaviour change
+   qualitatively: decay to the origin, a spiral onto one of the convective rolls
+   $C^\pm$, the strange attractor, and the periodic window near $\rho \approx 100$. A
+   live readout classifies the regime and fits the leading finite-time Lyapunov exponent.
 2. **Sensitive dependence.** Two trajectories from initial states differing by $\delta_0$,
    with $\ln\|\delta\|$ plotted against time so the exponential stretch, and the
-   saturation that ends it, are both visible.
-3. **Ensembles.** A cloud of perturbed initial states, with spread and ensemble-mean error
-   plotted together — and the crucial observation that the answer depends on *where on the
-   attractor you start*.
-4. **The real atmosphere.** Where the numbers land: $\lambda \approx 0.9$ MTU$^{-1}$ here
-   against $\approx 0.35$ day$^{-1}$ for the atmosphere, and the logarithmic return on
-   better observations, $\Delta t = \ln 10/\lambda \approx 6.5$ days per decade of
-   analysis-error reduction.
+   saturation that ends it, are both visible. This single twin pair is the experiment
+   [chapter 7]({{< relref "../part3/ch07_lyapunov-exponents.md" >}}) opens by taking
+   apart, so it is worth running before reading that one.
+3. **What a model time unit is worth.** $\lambda \approx 0.9$ MTU$^{-1}$ here against
+   $\approx 0.35$ day$^{-1}$ for the atmosphere — and the demonstration that **no single
+   MTU-to-days conversion reconciles the two**. Match the growth rates and the doubling
+   times disagree; match the doubling times and 1 MTU becomes 2.6 days rather than 5.
+   What transfers is the exponential law, not the constant in front of it.
+
+**What this chapter deliberately leaves to others.** Measuring $\lambda_1$ properly
+rather than from one twin pair is
+[chapter 7]({{< relref "../part3/ch07_lyapunov-exponents.md" >}}); ensemble construction,
+spread and calibration are
+[chapter 17]({{< relref "../part5/ch17_probabilistic-forecast-design.md" >}}); the
+forecast-skill record is
+[chapter 22]({{< relref "../part5/ch22_verification.md" >}}); and the logarithmic return
+on better observations, $\Delta t = \ln 10/\lambda$, is measured in
+[chapter 20]({{< relref "../part5/ch20_da-in-practice.md" >}}). This chapter is the
+system itself.
 
 ## The model
 

@@ -473,6 +473,29 @@ def s1_note(
     vectors that belonged to a state that far downstream. Here the perturbations are
     carried as persistent state across the assimilation cycle, which is what the
     operational scheme did.
+
+    ### How long this took
+
+    The mathematical case for ensemble forecasting was made decades before it was
+    affordable, and the table is a reminder of how long a good argument can wait for the
+    computer it needs.
+
+    | Year | Development |
+    |------|------------|
+    | **1963** | Lorenz shows deterministic chaos implies finite predictability |
+    | **1965** | Lorenz estimates the atmospheric predictability limit |
+    | **1969** | **Epstein** proposes stochastic-dynamic forecasting — the first ensemble concept |
+    | **1974** | **Leith** demonstrates Monte Carlo ensemble forecasting in a simple model |
+    | **1992** | ECMWF launches the **Ensemble Prediction System**; NCEP launches **GEFS** |
+    | **2002** | The ensemble Kalman filter is applied to NWP (chapter 19) |
+    | **2010s** | Hybrid ensemble-variational assimilation adopted by the major centres |
+    | **2020s** | Machine-learning post-processing and generative ensemble members (chapter 29) |
+
+    Twenty-three years separate Epstein's proposal from the first operational system,
+    and the two centres that reached it in the same year did so by the two different
+    constructions in the table above — NCEP with bred vectors, ECMWF with singular
+    vectors. **ECMWF's system today runs 51 members** (one control and fifty perturbed),
+    which is the number section 3 asks whether anyone needs.
     """
     )
     return
@@ -1038,6 +1061,9 @@ def s6_md(mo):
 
     ### Further reading
 
+    - Epstein (1969), *Stochastic dynamic prediction*, the first formal proposal of
+      ensemble forecasting *[citation needed]*
+    - Leith (1974), on Monte Carlo forecasting *[citation needed]*
     - Toth & Kalnay (1993, 1997), breeding and the NCEP ensemble *[citation needed]*
     - Molteni et al. (1996), the ECMWF singular-vector ensemble *[citation needed]*
     - Buizza & Palmer (1995), on singular vectors and ensemble design

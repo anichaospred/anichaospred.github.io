@@ -581,6 +581,50 @@ already-published teaching artefact and breaking it up before its successors exi
 would leave gaps. As chapters 7, 17 and 22 are written they should *take* material
 from it, and chapter 6 should shrink to the attractor and the bifurcation.
 
+**Status: done — but not as written.** The cut was made once chapters 7, 17 and 22 were
+live, and the first step was to check which of chapter 6's sections they had actually
+taken. Two had been taken; one had deliberately been left behind, and the plan above was
+wrong about it.
+
+*What went.* **Section 3, ensembles** — six cells, including the interactive ensemble
+widget, the spread/error diagnostic and the three-regime classification. Chapter 17
+carries all of it in far more depth (five construction schemes against one, spread as a
+falsifiable claim, member count, reliability against resolution), and **nothing anywhere
+in the book referenced chapter 6's version**. And **most of section 4** — the ECMWF
+skill-record table (chapter 22), the $\ln 10/\lambda$ derivation (chapter 20), and the
+predictability-of-the-second-kind material (chapters 23, 25 and 30). About 380 lines, a
+quarter of the chapter.
+
+*What stayed, against the plan.* **Section 2, sensitive dependence.** The plan said
+chapter 6 should shrink to "the attractor and the bifurcation", which would have removed
+the twin-trajectory experiment. It is kept, because the successors do not supersede it —
+they **depend** on it. Chapter 7 opens with the words "Chapter 6's experiment: perturb a
+state by $\delta_0$, integrate both copies, fit a straight line... It is the right idea
+and it is the honest way to *see* exponential growth", and then shows that one twin pair
+is too noisy to be a measurement; chapter 7 §4 refers back to "chapter 6's
+twin-experiment scatter"; and chapter 20 lists "Lorenz 63 and sensitive dependence —
+chapter 6" among its prerequisites and later invokes "the mechanism chapter 6
+established". Cutting section 2 would have broken four live cross-references and left
+chapter 7 opening with a critique of an experiment the reader had never run. **The
+condition the plan set — that the successors take the material — was met for sections 3
+and 4 and not for section 2**, and checking which was which before cutting is the whole
+of the difference between this and a bad edit.
+
+*What was rescued rather than lost.* The **operational timeline of ensemble forecasting**
+(Epstein 1969 to generative ensemble members in the 2020s) existed nowhere else in the
+book — chapter 2's history of NWP does not mention ensembles at all — so it moved into
+chapter 17 §1, where it sits alongside the NCEP/ECMWF construction split it explains,
+together with the Epstein and Leith references. The **model-against-atmosphere comparison
+table** stayed in chapter 6 rather than moving, because chapter 7 cites it twice as the
+place where the MTU convention is settled; chapter 7's two citations were rewritten to
+name the table rather than a section number, so a future renumbering cannot break them.
+
+*What chapter 6 is now.* Three sections — the attractor and the Hopf bifurcation that
+creates it, the single twin-pair experiment, and what a model time unit is worth — plus a
+short table naming the chapter that owns each question it no longer answers. 1,375 lines
+down to 994, with the guided questions rewritten around the surviving material: the
+bifurcation, which is now half the chapter's subject, previously had no question at all.
+
 ---
 
 ## 3. Reference mapping
@@ -642,11 +686,10 @@ remaining and no dead links in the table of contents.
 
 What that leaves is maintenance and consolidation rather than new chapters:
 
-1. **The two decisions on record above are both discharged** — chapter 20 has been split,
-   and chapter 6 should still shrink to the attractor and the bifurcation now that
-   chapters 7, 17 and 22 exist to take its later sections. That is the one structural
-   edit still outstanding, and it edits a live chapter for coherence rather than
-   correctness.
+1. **Both decisions on record above are discharged.** Chapters 20 and 6 have each been
+   split, in both cases after checking which successor chapters had actually taken the
+   material rather than assuming the plan's prediction had come true — and in chapter 6's
+   case the check changed the edit.
 2. **`docs/chaoslib.md` has no sections for `earlywarning`, `learning` or
    `shallowwater`** — three modules added by chapters 27, 29 and 2 without documentation.
    Every other module is documented.
