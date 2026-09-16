@@ -203,40 +203,6 @@ def sdic_controls(mo):
     return sep_exp, sdic_lead
 
 
-@app.cell
-def ens_controls(mo):
-    ic_choice = mo.ui.dropdown(
-        options={
-            "Slow region — spread grows late": "predictable",
-            "Typical point on the attractor": "typical",
-            "Fast region — spread grows early": "chaotic",
-        },
-        value="Typical point on the attractor",
-        label="Starting location on attractor",
-    )
-    perturb_exp = mo.ui.slider(
-        start=-6, stop=-1, step=0.5, value=-4,
-        label="Log₁₀ perturbation size  δ₀",
-        show_value=True,
-    )
-    n_members = mo.ui.slider(
-        start=5, stop=50, step=5, value=20,
-        label="Ensemble size  N",
-        show_value=True,
-    )
-    # Default 20 MTU: at the previous 10 the ensemble spread never crossed the 90%
-    # threshold for ANY starting point, so all three predictability regimes
-    # collapsed into one and the shaded bands conveyed nothing.
-    lead_time = mo.ui.slider(
-        start=1, stop=30, step=1, value=20,
-        label="Lead time (MTU)",
-        show_value=True,
-    )
-    return ic_choice, lead_time, n_members, perturb_exp
-
-
-# ===========================================================================
-# Title and overview
 # ===========================================================================
 @app.cell
 def display_title(mo):
@@ -256,11 +222,10 @@ is more effective than reading first.
 By the end of this notebook you will be able to:
 
 1. **Describe** the Lorenz (1963) system and explain what each variable represents physically
-2. **Demonstrate** sensitive dependence on initial conditions (SDIC) by running your own experiments
-3. **Measure** the leading Lyapunov exponent from the slope of the error-growth curve
-4. **Explain** why ensemble forecasting is the correct operational response to SDIC
-5. **Calculate** the gain in predictable time from a given improvement in observational accuracy
-6. **Distinguish** predictability of the first kind (initial-value) from the second kind (forced response)
+2. **Locate** the three fixed points and the Hopf bifurcation that destabilises them
+3. **Demonstrate** sensitive dependence on initial conditions (SDIC) by running your own experiments
+4. **Measure** the leading Lyapunov exponent from the slope of the error-growth curve
+5. **Explain** why no single conversion from model time units to days serves every purpose
 
 ---
 
@@ -279,16 +244,21 @@ By the end of this notebook you will be able to:
 
 | Section | Topic | Key concept |
 |---------|-------|-------------|
-| **1** | The Lorenz (1963) system | Strange attractor, deterministic chaos |
+| **1** | The Lorenz (1963) system | Fixed points, Hopf bifurcation, strange attractor |
 | **2** | Sensitive dependence on initial conditions | Lyapunov exponent, butterfly effect |
-| **3** | Ensemble forecasting | Predictability horizon, ensemble spread |
-| **4** | Connection to the real atmosphere | Error doubling time, 2nd-kind predictability |
+| **3** | What the model time unit is worth | Error doubling time, and why no conversion fits |
 | **📝** | Guided questions | Synthesis and quantitative reasoning |
+
+**What this chapter deliberately does not cover.** Ensemble forecasting is chapter 17;
+measuring the Lyapunov exponent properly, rather than from one twin pair, is chapter 7;
+the forecast-skill record is chapter 22; and the logarithmic return on better
+observations is chapter 20. This chapter is the system itself — the attractor, the
+bifurcation that creates it, and the one experiment everything later is built on.
 
 > **Unit convention.** One *model time unit* (MTU) is read as ≈ **5 days** of
 > atmospheric time throughout this chapter. Treat that as a loose convention rather
 > than a calibration: it is *not* derived by matching Lorenz 63 to the atmosphere, and
-> Section 4 shows exactly where the two part company.
+> the last section shows exactly where the two part company.
 """)
     return
 
@@ -810,316 +780,17 @@ not a pessimistic statement about the current state of NWP.
 
 
 # ===========================================================================
-# Ensemble NWP — historical background
-# ===========================================================================
-@app.cell
-def cell_ensemble_history(mo):
-    mo.md(r"""
----
-### 🕰️ The operational history of ensemble forecasting
-
-The mathematical case for ensemble NWP was made long before it was computationally feasible:
-
-| Year | Development |
-|------|------------|
-| **1963** | Lorenz shows deterministic chaos implies finite predictability |
-| **1965** | Lorenz estimates the atmospheric predictability limit |
-| **1969** | **Epstein** proposes stochastic-dynamic forecasting — the first ensemble concept |
-| **1974** | **Leith** demonstrates Monte Carlo ensemble forecasting in a simple model |
-| **1992** | ECMWF launches the **Ensemble Prediction System (EPS)** operationally |
-| **1992** | NCEP launches the **Global Ensemble Forecast System (GEFS)** |
-| **2002** | Ensemble Kalman filter (EnKF) applied to NWP by Hamill & Snyder |
-| **2010s** | Hybrid ensemble-variational (En-Var) data assimilation adopted by major centres |
-| **2020s** | Machine-learning ensemble post-processing and diffusion-model ensemble generation |
-
-**How are operational perturbations chosen?**
-
-Simply adding random noise (as we do below) is not optimal — it wastes ensemble members
-on directions that do not grow.  Real NWP centres use more sophisticated methods:
-
-| Method | Idea | Used by |
-|--------|------|---------|
-| **Bred vectors** | Evolve a perturbation for a short time, rescale, repeat — breeds fast-growing modes | NCEP (1992–) |
-| **Singular vectors** | Find the perturbation that grows most over a chosen optimisation period | ECMWF (1992–) |
-| **Ensemble Kalman filter** | Use the ensemble itself as the background-error covariance in data assimilation | Many regional centres |
-| **Stochastic physics** | Add random noise to model tendencies to represent model uncertainty | ECMWF (2009–) |
-
-**ECMWF EPS at a glance (2024):** 51 members (1 control + 50 perturbed),
-18 km horizontal resolution, 137 vertical levels, 15-day medium-range and 46-day extended-range products.
-""")
-    return
-
-
-# ===========================================================================
-# Section 3 — Ensemble Forecasting interactive
-# ===========================================================================
-@app.cell
-def display_section3_text(mo):
-    mo.md(r"""
----
-## 3 · Ensemble Forecasting
-
-A single deterministic forecast is an *answer without an error bar*.
-The operational response to SDIC is the **ensemble forecast**: integrate $N$ slightly
-different trajectories from initial states that sample the analysis uncertainty.
-
-### What the ensemble tells us
-
-The **ensemble mean** $\bar X(t) = \frac{1}{N}\sum_{i=1}^N X_i(t)$ is a better
-point forecast than any single member.
-
-The **ensemble spread** — the RMS standard deviation across members — measures forecast uncertainty:
-
-$$\sigma_\text{spread}(t) = \sqrt{\frac{1}{N}\sum_{i=1}^{N}\left|X_i(t) - \bar X(t)\right|^2}$$
-
-Three predictability regimes:
-
-| Regime | Spread / attractor size | Interpretation |
-|--------|------------------------|---------------|
-| 🟢 **Predictable** | < 10 % | Members closely clustered; deterministic forecast reliable |
-| 🟠 **Semi-predictable** | 10 – 90 % | Spread growing fast; probabilistic guidance still useful |
-| 🔴 **Unpredictable** | > 90 % | Spread saturated; forecast no better than climatology |
-
-### What the two panels show
-
-**Left (phase space):** Faint violet lines are the $N$ members; the **indigo** line is
-the *truth* (unperturbed run) and the **teal** line is the *ensemble mean*.
-The emerald cloud is the ensemble at $t = 0$, the rose cloud at $t = T$.
-A compact rose cloud = reliable forecast; a cloud spanning the whole attractor = no skill.
-Watch the mean track the truth, then peel away once the members disagree.
-
-**Right (spread plot):** The **violet** curve is $\sigma_\text{spread}(t)$; the dashed
-grey curve is the **ensemble-mean error** $|\bar X - X_\text{truth}|$, both on a log scale.
-For a well-calibrated ensemble the two curves should sit on top of each other — if the
-spread runs *below* the error, the ensemble is **under-dispersive** (overconfident).
-The x-position of the 🟢→🟠 transition is the **predictability horizon**.
-
-### Why starting location matters
-
-The attractor is not uniformly chaotic.  Near **lobe centres**, trajectories loop
-coherently before switching — relatively predictable.  Near the **saddle point** at
-the origin, perturbations grow much faster.  Near **lobe transitions**, which lobe
-a trajectory switches to becomes sensitive to tiny perturbations.
-This *flow-dependent predictability* is why modern NWP generates a fresh ensemble every 6 hours.
-""")
-    return
-
-
-@app.cell
-def display_section3_experiment(mo):
-    mo.callout(
-        mo.md(r"""
-**🔬 Experiment — find the predictability horizon:**
-
-1. Start with defaults (predictable region, δ₀ = 10⁻⁴, N = 20).
-   Drag **lead time** slowly from 1 → 30 MTU.  Note when the green cloud fills the attractor.
-
-2. Change **starting location** to *Near saddle point*.  Is the horizon earlier or later?
-   Why might the position on the attractor matter?
-
-3. Fix lead time = 15.  Slide **perturbation size** from 10⁻⁶ → 10⁻¹.
-   Does reducing δ₀ by one decade give a proportionally longer horizon?
-
-4. Fix lead time = 15 and δ₀ = 10⁻⁴.  Compare **N = 5** vs **N = 50**.
-   Which gives a smoother, more reliable spread estimate?
-
-5. *Bonus:* Set N = 50, δ₀ = 10⁻⁴, location = *Chaotic lobe transition*.
-   Is the horizon shorter or longer than the predictable region?
-"""),
-        kind="neutral",
-    )
-    return
-
-
-@app.cell
-def display_section3_interactive(
-    C_CONTEXT, C_MEAN, C_PERT, C_SAT, C_SPREAD, C_START, C_TRUTH, attractor_ref,
-    attractor_size, finish_mpl, ic_choice, integrate_l63, lead_time, mo, mpl_grid,
-    n_members, np, perturb_exp,
-):
-    # All three starts are points ON the attractor, chosen because their measured
-    # spread-growth horizons genuinely differ (t10 of roughly 11, 9 and 6.5 MTU).
-    # The previous options did not work: "predictable" was the fixed point C+ and
-    # "saddle" was near the origin, and from both the ensemble spread stayed under
-    # 1% of the attractor size for 20 MTU -- so the dropdown, whose whole purpose
-    # is to show that WHERE you start matters, showed nothing at all.
-    _ic_map = {
-        "predictable": attractor_ref[:, 2400].copy(),
-        "typical": attractor_ref[:, 0].copy(),
-        "chaotic": attractor_ref[:, 1500].copy(),
-    }
-    _ic_labels = {
-        "predictable": "slow region — spread grows late",
-        "typical": "a typical point on the attractor",
-        "chaotic": "fast region — spread grows early",
-    }
-    _x0 = _ic_map[ic_choice.value]
-    _N = n_members.value
-    _T = lead_time.value
-    _pert = 10.0 ** perturb_exp.value
-    _nt = 600
-
-    _t, _truth = integrate_l63(_x0, _T, n=_nt, rtol=1e-9, atol=1e-12)
-    _rng = np.random.default_rng(42)
-    _perturbs = _rng.standard_normal((_N, 3)) * _pert
-    _trajs = np.zeros((_N, 3, _nt))
-    for _i in range(_N):
-        _, _trajs[_i] = integrate_l63(_x0 + _perturbs[_i], _T, n=_nt,
-                                      rtol=1e-9, atol=1e-12)
-
-    _mean = _trajs.mean(axis=0)
-    _rms_spread = np.sqrt(np.mean(np.var(_trajs, axis=0), axis=0))
-    _mean_err = np.sqrt(np.mean((_mean - _truth) ** 2, axis=0))
-    _t_max = float(_t[-1])
-
-    _i10 = np.where(_rms_spread >= 0.1 * attractor_size)[0]
-    _i90 = np.where(_rms_spread >= 0.9 * attractor_size)[0]
-    _t10 = float(_t[_i10[0]]) if _i10.size else _t_max
-    _t90 = float(_t[_i90[0]]) if _i90.size else _t_max
-
-    _final_sat = float(_rms_spread[-1] / attractor_size)
-    if _final_sat < 0.3:
-        _regime, _ck = "🟢 Ensemble well-clustered — forecast trustworthy", "success"
-    elif _final_sat < 0.8:
-        _regime, _ck = "🟠 Spread growing rapidly — probabilistic guidance only", "warn"
-    else:
-        _regime, _ck = "🔴 Spread saturated — forecast is climatology", "danger"
-
-    # ---- 2x2: projections above, spread/error and member x(t) below ----
-    _fig, (_axz, _axy, _axsp, _axx) = mpl_grid(2, 2)
-
-    for _a, (_i, _j, _xl, _yl, _ttl) in [
-        (_axz, (0, 2, "x", "z", "Ensemble in phase space  (x–z)")),
-        (_axy, (0, 1, "x", "y", "Ensemble in phase space  (x–y)")),
-    ]:
-        _a.plot(attractor_ref[_i], attractor_ref[_j], color=C_CONTEXT,
-                linewidth=0.4, zorder=1)
-        # Members drawn first, thin and translucent: the point is the *envelope*
-        # they trace, not any individual member.
-        for _m in range(_N):
-            _a.plot(_trajs[_m, _i], _trajs[_m, _j], color=C_SPREAD,
-                    linewidth=0.5, alpha=0.28, zorder=2,
-                    label="members" if (_m == 0 and _a is _axz) else None)
-        _a.plot(_truth[_i], _truth[_j], color=C_TRUTH, linewidth=1.3, zorder=4,
-                label="truth" if _a is _axz else None)
-        _a.plot(_mean[_i], _mean[_j], color=C_MEAN, linewidth=1.2, zorder=4,
-                label="ensemble mean" if _a is _axz else None)
-        _a.plot(_trajs[:, _i, 0], _trajs[:, _j, 0], marker="o", markersize=2.6,
-                color=C_START, linestyle="none", zorder=5,
-                label="t = 0 cloud" if _a is _axz else None)
-        _a.plot(_trajs[:, _i, -1], _trajs[:, _j, -1], marker="o", markersize=2.6,
-                color=C_PERT, linestyle="none", zorder=5,
-                label=f"t = {_T} cloud" if _a is _axz else None)
-        _a.set_xlabel(_xl)
-        _a.set_ylabel(_yl)
-        _a.set_title(_ttl)
-    _axz.legend(loc="upper left", fontsize=6.5, framealpha=0.9, ncol=2)
-
-    # ---- spread vs ensemble-mean error, with the three regimes shaded ----
-    # Plain-text labels inside the figure: matplotlib's default font has no emoji
-    # glyphs, so an emoji here renders as an empty box. The coloured shading already
-    # carries the traffic-light meaning, and the emoji survive in the readout below.
-    for _x0s, _x1s, _col, _lab in (
-        (0.0, _t10, "#e8f7f1", "predictable"),
-        (_t10, _t90, "#fdf3e3", "semi-predictable"),
-        (_t90, _t_max, "#fbeaea", "unpredictable"),
-    ):
-        if _x0s < _x1s:
-            _axsp.axvspan(_x0s, _x1s, color=_col, zorder=0)
-            # Along the BOTTOM: the top of this panel already carries the
-            # attractor-size and 10% threshold annotations, and three more labels
-            # up there collide with both of them and with each other.
-            _axsp.annotate(_lab, ((_x0s + _x1s) / 2, 0.02),
-                           xycoords=("data", "axes fraction"), ha="center",
-                           va="bottom", fontsize=6.5, color="#475569")
-    _axsp.semilogy(_t, _rms_spread, color=C_SPREAD, linewidth=1.8,
-                   label="ensemble spread", zorder=3)
-    _axsp.semilogy(_t, _mean_err, color="#475569", linewidth=1.3, linestyle="--",
-                   label="ensemble-mean error", zorder=3)
-    _axsp.axhline(attractor_size, color=C_SAT, linewidth=1.2, linestyle="--")
-    _axsp.annotate("attractor size — fully unpredictable", (0.02, attractor_size),
-                   xycoords=("axes fraction", "data"), fontsize=6.5,
-                   color="#b91c1c", va="bottom")
-    _axsp.axhline(0.1 * attractor_size, color=C_SPREAD, linewidth=1.0, linestyle=":")
-    _axsp.annotate("10 % threshold", (0.02, 0.1 * attractor_size),
-                   xycoords=("axes fraction", "data"), ha="left", fontsize=6.5,
-                   color="#7c3aed", va="bottom")
-    _axsp.set_xlabel("lead time (MTU)")
-    _axsp.set_ylabel("RMS (state units)")
-    _axsp.set_title("Spread and ensemble-mean error")
-    _axsp.legend(loc="center right", fontsize=7, framealpha=0.9)
-
-    # ---- every member's x(t), the classic spaghetti plot ----
-    for _m in range(_N):
-        _axx.plot(_t, _trajs[_m, 0], color=C_SPREAD, linewidth=0.5, alpha=0.3)
-    _axx.plot(_t, _truth[0], color=C_TRUTH, linewidth=1.3, label="truth")
-    _axx.plot(_t, _mean[0], color=C_MEAN, linewidth=1.2, label="ensemble mean")
-    _axx.set_xlabel("lead time (MTU)")
-    _axx.set_ylabel("x")
-    _axx.set_title("x(t): every member")
-    _axx.legend(loc="upper left", fontsize=7, framealpha=0.9)
-
-    finish_mpl(
-        _fig,
-        suptitle=f"N = {_N}  ·  δ₀ = 10^{perturb_exp.value:.1f}  ·  T = {_T} MTU  ·  "
-                 f"IC: {_ic_labels[ic_choice.value]}",
-    )
-
-    mo.vstack([
-        mo.md("### ⚙️ Controls"),
-        mo.hstack([ic_choice, n_members], gap="3rem", justify="start"),
-        mo.hstack([perturb_exp, lead_time], gap="3rem", justify="start"),
-        _fig,
-        mo.callout(
-            mo.md(
-                f"**💡 Live readout** &nbsp;|&nbsp; N = {_N} members &nbsp;·&nbsp; "
-                f"δ₀ = 10^{perturb_exp.value:.1f} &nbsp;·&nbsp; T = {_T} MTU  \n"
-                f"Predictability horizon (spread > 10 %): **t ≈ {_t10:.1f} MTU**  \n"
-                f"Full saturation (spread > 90 %): **t ≈ {_t90:.1f} MTU**  \n"
-                f"Final spread: **{_final_sat:.0%}** of attractor size &nbsp;·&nbsp; "
-                f"spread/error ratio at T: **{_rms_spread[-1] / max(_mean_err[-1], 1e-9):.2f}**  \n"
-                f"{_regime}"
-            ),
-            kind=_ck,
-        ),
-    ])
-    return
-
-
-@app.cell
-def display_section3_calibration(mo):
-    mo.md(r"""
-### Ensemble spread vs. ensemble mean error
-
-A perfectly calibrated ensemble satisfies:
-$$\langle \sigma^2_\text{spread} \rangle = \langle \epsilon^2_\text{mean} \rangle$$
-
-where $\epsilon_\text{mean} = |\bar X - X_\text{truth}|$ is the ensemble-mean error.
-In practice, most NWP ensembles are **underdispersive** (spread < error) because:
-
-1. Initial perturbations do not fully sample the true analysis error
-2. Model error is not fully represented
-3. Ensemble size $N$ is finite
-
-Underdispersion means the ensemble is **overconfident**.
-Calibration techniques (inflation, rank histogram adjustment) correct for this in post-processing.
-""")
-    return
-
-
-# ===========================================================================
-# Section 4 — Connection to the real atmosphere
 # ===========================================================================
 @app.cell
 def display_section4_text(mo):
     mo.md(r"""
 ---
-## 4 · Connection to the Real Atmosphere
+## 3 · What the model time unit is worth
 
-The Lorenz model is a toy, but its key numbers map onto the real atmosphere
-with surprising fidelity.
+The Lorenz model is a toy. The question this section settles is the one every later
+chapter needs an answer to before it can quote a number in days: **what is one MTU?**
 
-### Lyapunov numbers: model vs. atmosphere
+### Lyapunov numbers: model against atmosphere
 
 | Quantity | Lorenz 63 | Real atmosphere |
 |----------|-----------|----------------|
@@ -1138,193 +809,144 @@ the model is roughly half as chaotic per day as the system it stands in for.
 
 Calibrate the other way — pick the MTU so the *doubling times* agree — and you get
 1 MTU ≈ 2.6 days instead. Neither reading is wrong; they answer different questions,
-and no single conversion satisfies both. What transfers from this model to the
-atmosphere is the **law** — error grows exponentially, so predictability is bought
-logarithmically — not the constant in front of it.
+and no single conversion satisfies both.
+
+**What transfers from this model to the atmosphere is the law — error grows
+exponentially, so predictability is bought logarithmically — not the constant in front
+of it.** That is the sentence to carry out of this chapter. Every quantitative claim
+later in the book that converts MTU to days rests on a convention chosen here, and says
+so.
 
 Taking the 5-day reading, ECMWF's ≈ 10 days of useful deterministic skill is roughly
 2 MTU: about **2.6 error-doubling times**, or 1.8 e-folding times. (Those two are easy
 to conflate. The Lyapunov time $1/\lambda$ is the e-folding time; the doubling time
 $\ln 2/\lambda$ is shorter by a factor of $\ln 2$.)
 
-### The diminishing return of better observations
+### Where the rest of this went
 
-Suppose you improve your analysis error from $\delta_0$ to $\delta_0 / 10$.
-The extra predictable time gained is
+The obvious follow-on questions each have a chapter of their own, and each does the job
+more carefully than a closing section could:
 
-$$\Delta t = \frac{\ln 10}{\lambda} \approx \frac{2.3}{0.35\;\text{day}^{-1}} \approx 6.5\;\text{days}$$
-
-A factor-of-10 improvement buys only **6.5 extra days**.
-A factor-of-100 improvement buys only **13 extra days**.
-This logarithmic ceiling means the ≈ 2–3 week predictability limit is
-**fundamental, not a consequence of inadequate technology**.
-
-### Historical skill improvement at ECMWF
-
-ECMWF tracks forecast skill continuously since 1980.
-The 500 hPa geopotential anomaly correlation (AC) score: a score of 0.6 is
-the conventional threshold for "useful" forecasting.
-
-| Era | 500 hPa AC = 0.6 reached at... |
-|-----|-------------------------------|
-| 1980 | ≈ 5 days (Northern Hemisphere) |
-| 1990 | ≈ 7 days |
-| 2000 | ≈ 8 days |
-| 2010 | ≈ 9 days |
-| 2020 | ≈ 9–10 days |
-
-The slowing rate of improvement is consistent with the **logarithmic limit** imposed by SDIC.
-
-### Predictability of the second kind
-
-Everything above is **predictability of the first kind**: initial-value prediction
-of a specific trajectory.  There is also a **second kind**: predicting the *response
-of the attractor to a sustained external forcing*.
-
-In the Lorenz system, individual trajectories become unpredictable after ≈ 5–8 MTU,
-but if you change $\rho$ (the forcing parameter), the *time-mean* of $X$ shifts
-systematically — and that shift can be predicted even when individual trajectories cannot.
-This is the mathematical analogue of the climate-vs-weather distinction.
-
-| Phenomenon | Typical lead time | Mechanism |
-|------------|------------------|-----------|
-| El Niño / La Niña (ENSO) | 6–18 months | Slow ocean-atmosphere coupling |
-| Monsoon onset | 2–4 weeks | Land–sea thermal contrast |
-| Stratospheric sudden warmings | 2–3 weeks | Wave-mean-flow interaction |
-| Long-term climate change | Decades–centuries | Radiative forcing from GHGs |
-
-| Predictability type | Question asked | Chaotic limit applies? |
-|---------------------|----------------|----------------------|
-| **1st kind** | Where will this air mass be in 10 days? | Yes — hard ceiling |
-| **2nd kind** | How will the *average* temperature change if CO₂ doubles? | No — signal persists |
-
-Climate projections are a predictability-of-the-second-kind problem.
-Their uncertainty comes from *model structural error* and *scenario uncertainty*,
-not from the butterfly effect.
+| Question | Chapter |
+|---|---|
+| What does $\lambda_1$ really equal, measured properly? | 7 — one twin pair is not an answer |
+| How fast does error grow once it is no longer small? | 9 — the nonlinear regime |
+| Is the predictability limit finite even with perfect observations? | 12 — the upscale cascade |
+| What has the forecast-skill record actually done since 1980? | 22 — verification and the practical horizon |
+| What does a decade of better observations buy? | 20 — $\ln 10/\lambda$, measured |
+| How is the ensemble built, and what does its spread claim? | 17 — probabilistic forecast design |
+| What is predictable when the trajectory is not? | 23, 25, 30 — forced response and the invariant measure |
 """)
     return
 
 
-@app.cell
 def display_section4_callout(mo):
     mo.callout(
         mo.md(r"""
-**Key take-aways from this tutorial**
+**What to take away from this chapter**
 
-1. **Chaos is irreducible:** SDIC means that no finite improvement in initial
-   conditions can extend deterministic forecast skill indefinitely.
-   The atmosphere has a hard predictability ceiling near 2–3 weeks.
+1. **The attractor exists because nothing else can.** Above $\rho_H \approx 24.74$ all
+   three fixed points are unstable, so a bounded trajectory has nowhere to settle. The
+   strange attractor is what is left when every steady state has been ruled out — not an
+   extra feature added to the system.
 
-2. **Ensembles are the correct response:** A probabilistic forecast communicates
-   the *distribution* of possible futures honestly.  A deterministic forecast
-   beyond the predictability horizon is overconfident by construction.
+2. **The bifurcation is the mechanism, and it is visible.** Sweep $\rho$ through 24.74
+   and the spiral onto $C^\pm$ gives way to the two-lobed wandering. Chaos here has a
+   cause with a number attached to it.
 
-3. **The two kinds of predictability are different problems:**
-   Weather forecasting (1st kind) is limited by chaos.
-   Climate projection (2nd kind) is not — but faces other sources of uncertainty.
+3. **Chaos is irreducible.** SDIC means no finite improvement in the initial condition
+   extends deterministic skill indefinitely. That is a property of the flow, not of the
+   instruments.
 
-4. **Improving observations has diminishing returns:**
-   Each decade of improvement in $\delta_0$ buys only $\ln(10)/\lambda$ extra days.
-   For the atmosphere that is ≈ 6.5 days per decade.
+4. **One twin pair shows you the effect; it does not measure it.** The exponent fitted
+   from a single experiment depends on where you started. Chapter 7 is about what to do
+   instead, and it opens with exactly this figure.
 
-5. **Flow-dependent predictability matters:**
-   Not all weather patterns are equally predictable.
-   Ensemble spread is the operational estimate of this situation-dependent uncertainty.
+5. **The law transfers; the constant does not.** No single MTU-to-days conversion
+   reconciles Lorenz 63 with the atmosphere. Take the exponential law and the
+   logarithmic return it implies, and leave the number behind.
 """),
         kind="info",
     )
     return
 
 
-# ===========================================================================
-# Guided Questions
-# ===========================================================================
-@app.cell
 def display_questions(mo):
     mo.md(r"""
 ---
 ## 📝 Guided Questions
 
-Work through these with a neighbour (~15 min).  We will discuss as a group.
+Work through these with a neighbour (~15 min). We will discuss as a group.
 
 ---
 
-**Q1 — Predictability horizon** *(Section 3)*
+**Q1 — The bifurcation** *(Section 1)*
 
-Set δ₀ = 10⁻⁴, N = 20, starting location = *Predictable region*.
-Drag lead time slowly from 1 → 30 MTU.
+Set $\sigma = 10$, $\beta = 8/3$ and sweep $\rho$ from 0.5 upwards, watching the
+live classification and the fixed-point markers.
 
-- At what lead time does the green start-cloud scatter across the entire attractor?
-- Which colour zone does the spread plot enter at that point?
-- Switch to *Chaotic lobe transition*.  Is the horizon earlier or later?
-  Why might some regions of the attractor be more predictable than others?
-
----
-
-**Q2 — Sensitivity to perturbation size** *(Section 3)*
-
-Fix lead time = 15 MTU.  Slide δ₀ from 10⁻⁶ → 10⁻¹.
-
-- Does reducing δ₀ by **one decade** give you a proportionally longer horizon?
-- Using $\lambda \approx 0.9\;\text{MTU}^{-1}$, calculate the expected extra
-  predictable time: $\Delta t = \ln(10)/\lambda = ?$  Does your experiment agree?
-- What does this imply for the practical benefit of improving atmospheric
-  observations by an order of magnitude?
+- Below $\rho = 1$ everything decays to the origin. What is that state physically?
+- Between $\rho = 1$ and $\rho \approx 24.74$ the trajectory spirals onto $C^+$ or
+  $C^-$. Which one it reaches depends on the initial condition — check it by changing
+  $x_0$. Is that sensitive dependence?
+- Cross $\rho_H \approx 24.74$. The fixed points do not move, and they do not
+  disappear. What changed?
 
 ---
 
-**Q3 — Ensemble size** *(Section 3)*
+**Q2 — Reading the separation curve** *(Section 2)*
 
-Fix lead time = 15 MTU and δ₀ = 10⁻⁴.  Compare N = 5 vs N = 50.
+Set $\delta_0 = 10^{-4}$ and drag the lead time from 1 to 30 MTU.
 
-- How noisy is the spread estimate with N = 5?
-  Could you reliably identify the predictability horizon from it?
-- At what N does the spread curve look smooth enough to trust?
-- ECMWF uses 51 members.  Based on your experiments, does that seem justified?
+- Identify the three phases on the log-separation plot: sub-exponential, exponential,
+  saturated. Which one does the fitted $\lambda$ describe?
+- Slide $\delta_0$ from $10^{-6}$ to $10^{-1}$. Does reducing $\delta_0$ by one decade
+  give a proportionally longer useful forecast, or a fixed extra amount? Predict the
+  amount from $\Delta t = \ln 10/\lambda$ before you measure it.
+- At $\delta_0 = 10^{-1}$ the fit is poor. Why — and which of the three phases has
+  disappeared?
 
 ---
 
-**Q4 — Quantitative connection to the real atmosphere** *(Sections 2 & 4)*
+**Q3 — Where you start matters** *(Section 2)*
+
+Keep $\delta_0$ fixed and re-run the twin experiment from several different points on
+the attractor (change $x_0$, $y_0$, $z_0$ in Section 1's controls and let the transient
+settle).
+
+- How much does the fitted $\lambda$ vary between starting points?
+- Is that variation a property of the system, of the experiment, or of both?
+- Chapter 7 opens with this measurement repeated many times. Predict the shape of that
+  histogram before you read it.
+
+---
+
+**Q4 — Model time against atmospheric time** *(Sections 2 & 3)*
 
 In L63 the error **doubling** time is $\ln 2/\lambda_1 \approx 0.77$ MTU and the
-**e-folding** time is $1/\lambda_1 \approx 1.1$ MTU — do not use them
-interchangeably. ECMWF achieves useful skill to ≈ 10 days.
+**e-folding** time is $1/\lambda_1 \approx 1.1$ MTU — do not use them interchangeably.
+ECMWF achieves useful skill to ≈ 10 days.
 
 - Taking 1 MTU ≈ 5 days, how many *doubling* times is a 10-day forecast? How many
   *e-folding* times? (They differ by a factor of $\ln 2$; you should get ≈ 2.6 and
   ≈ 1.8.)
-- If ECMWF could reduce analysis error by a factor of 100, how many extra days
-  of deterministic predictability would that buy?  Use $\Delta t = \ln(100) / 0.35\;\text{day}^{-1}$.
-- Is this gain worth the cost of a factor-100 improvement in observations?
-
----
-
-**Q5 — Predictability of the second kind** *(Section 4, bonus)*
-
-Set starting location = *Near saddle point*, δ₀ = 10⁻⁶, N = 20.
-Watch the ensemble saturate — individual trajectories become completely uncorrelated.
-
-- Suppose you care not about any specific trajectory but about the
-  **long-run time-average** of $X$.  Would that remain predictable after the Lorenz time?  Why?
-- If someone changed $\rho$ from 28 to 30, could you predict the *new* time-mean of $X$
-  even though individual trajectories are still chaotic?
-- How does this connect to the distinction between weather forecasting
-  (**predictability of the 1st kind**) and climate projection (**predictability of the 2nd kind**)?
+- Now calibrate the other way, so that the model and the atmosphere agree on the
+  doubling time. What is 1 MTU in days? Which of the two conventions would you use to
+  quote a predictability horizon, and which to quote a growth rate?
+- The comparison table's two columns are independent measurements. Name one quantity in
+  it that you would expect to transfer between the model and the atmosphere, and one
+  that you would not.
 
 ---
 
 *System: Lorenz (1963), σ = 10, ρ = 28, β = 8/3.*
 *Integration: RK45 (scipy), rtol = 10⁻⁹.*
-*Ensemble perturbations: iid Gaussian with seed = 42.*
-*Time unit: 1 MTU read as ≈ 5 days — a loose convention, not a calibration; see Section 4.*
+*Time unit: 1 MTU read as ≈ 5 days — a loose convention, not a calibration; see
+Section 3.*
 """)
     return
 
 
-# ===========================================================================
-# Further reading
-# ===========================================================================
-@app.cell
 def cell_further_reading(mo):
     mo.md(r"""
 ---
@@ -1342,9 +964,6 @@ def cell_further_reading(mo):
 - **Lorenz, E. N. (1975)**. *Climatic predictability.*
   GARP Publication Series No. 16, 132–136.
   Introduces the first/second-kind predictability distinction.
-
-- **Epstein, E. S. (1969)**. *Stochastic dynamic prediction.*
-  Tellus, 21(6), 739–759.  The first formal ensemble forecasting proposal.
 
 - **Palmer, T. N. (2000)**. *Predicting uncertainty in forecasts of weather and climate.*
   Reports on Progress in Physics, 63(2), 71.
