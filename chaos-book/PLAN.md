@@ -700,6 +700,11 @@ What that leaves is maintenance and consolidation rather than new chapters:
 3. **Citations.** Every chapter carries *[citation needed]* markers where a literature
    value or a reference belongs. Filling them is the largest remaining task and the one
    that cannot be done from inside the repository.
+   [`docs/citations.md`](docs/citations.md) is the worklist: 258 markers, but only **162
+   distinct claims**, of which **192 markers already name the work** and need a locator or
+   a bibliographic record rather than a search. Palmer & Hagedorn (2006) alone accounts
+   for 40 of them, and ten markers sit in `chaoslib/` and `tests/` justifying numbers the
+   suite asserts — those are the ones to do first.
 
 ### A second decision on record: splitting chapter 20
 
