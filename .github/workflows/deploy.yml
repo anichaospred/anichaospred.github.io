@@ -60,7 +60,28 @@ jobs:
             name=$(basename "$nb" .py)
             test -f "site/static/nb/$name.html" \
               || { echo "missing export for $name"; exit 1; }
+            test -f "site/static/ipynb/$name.ipynb" \
+              || { echo "missing .ipynb for $name"; exit 1; }
           done
+          # A download whose `import marimo as mo` comes after the first `mo.`
+          # use raises NameError on that cell, and nothing about the file looks
+          # wrong. export_ipynb.py hoists the import; this proves it did.
+          python3 - <<'PY'
+          import glob, json, re, sys
+          bad = []
+          for f in sorted(glob.glob("site/static/ipynb/ch*.ipynb")):
+              code = ["".join(c["source"]) for c in json.load(open(f))["cells"]
+                      if c["cell_type"] == "code"]
+              imp = next((i for i, s in enumerate(code) if "import marimo" in s), None)
+              use = next((i for i, s in enumerate(code)
+                          if re.search(r"\bmo\.", s) and "import marimo" not in s), None)
+              if imp is None or (use is not None and imp > use):
+                  bad.append(f)
+          if bad:
+              print("marimo imported too late in:", *bad, sep="\n  ")
+              sys.exit(1)
+          print(f"cell order ok in {len(glob.glob('site/static/ipynb/ch*.ipynb'))} downloads")
+          PY
           echo "exports present: $(ls site/static/nb/ch*.html | wc -l) chapters, \
             $(ls site/static/nb/assets | wc -l) shared asset files"
 

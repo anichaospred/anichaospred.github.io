@@ -27,6 +27,19 @@ __generated_with = "0.23.9"
 app = marimo.App(width="full", app_title="Chapter NN -- <Title>")
 
 
+# Keep this cell FIRST. marimo schedules by dependency, so its position is
+# irrelevant in the browser -- but `marimo export ipynb --sort top-down` emits
+# cells in file order, and Jupyter runs them top to bottom. With this cell last,
+# every `mo.md(...)` above it raises NameError and the download dies on its
+# first cell. scripts/export_ipynb.py hoists it defensively; keeping it here
+# means the file reads the way it runs.
+@app.cell
+def _():
+    import marimo as mo
+
+    return (mo,)
+
+
 @app.cell(hide_code=True)
 def _(mo):
     mo.md(
@@ -144,13 +157,6 @@ def _(mo):
         """
     )
     return
-
-
-@app.cell
-def _():
-    import marimo as mo
-
-    return (mo,)
 
 
 if __name__ == "__main__":

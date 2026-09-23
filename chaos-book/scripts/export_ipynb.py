@@ -113,6 +113,34 @@ def strip_pyodide_bootstrap(source: str) -> tuple[str, bool]:
     return "\n".join(cleaned).strip() + "\n", True
 
 
+def hoist_marimo_import(cells: list[dict]) -> bool:
+    """Move the `import marimo as mo` cell to the front of the notebook.
+
+    marimo schedules by dependency, so where that cell sits in the .py is
+    irrelevant to the browser. `--sort top-down` emits cells in file order and
+    Jupyter runs them top to bottom, so a notebook that keeps the import last --
+    which is where `_template.py` used to put it, and where marimo puts it by
+    default -- raises NameError on its first `mo.md(...)` and the download dies
+    on cell one. Nothing in the exported file looks wrong, so this is not caught
+    by reading it.
+
+    Reordering is safe for the same reason it was safe to put the cell last:
+    nothing else is in it.
+    """
+    for index, cell in enumerate(cells):
+        if cell["cell_type"] != "code":
+            continue
+        body = [
+            line.strip()
+            for line in "".join(cell["source"]).splitlines()
+            if line.strip() and not line.strip().startswith("#")
+        ]
+        if body and all(line in ("import marimo", "import marimo as mo") for line in body):
+            cells.insert(0, cells.pop(index))
+            return True
+    return False
+
+
 def build_install_cell(deps: list[str], needs_chaoslib: bool) -> list[str]:
     """The `%pip install` cell placed at the top of the download."""
     pip_deps = " ".join(f'"{d}"' for d in deps) if deps else ""
@@ -222,6 +250,8 @@ def convert(src: Path, dest: Path, page_url: str | None = None) -> None:
         if hit:
             cell["source"] = new_source.splitlines(keepends=True)
             needs_chaoslib = True
+
+    hoist_marimo_import(nb["cells"])
 
     title = notebook_title(src)
     nb["cells"] = [
